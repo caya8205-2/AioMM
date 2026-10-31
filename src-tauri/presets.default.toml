@@ -1,0 +1,33 @@
+[[presets]]
+id = "oilskin-3plus"
+name = "KatFXMatcap OilSkin (Body Parts 3+)"
+description = "Recommended first pass: applies OilSkin and Clear to Component 3 and higher."
+group = "KatFXMatcap OilSkin"
+recommended = true
+section_prefix = "TextureOverride"
+min_component = 3
+
+[[presets.insert_after]]
+anchor = "run = CommandListOverrideSharedResources"
+inject = 'run = CommandList\KatFXMatcap\OilSkin'
+
+[[presets.insert_before]]
+anchor = "run = CommandListCleanupSharedResources"
+inject = 'run = CommandList\KatFXMatcap\Clear'
+
+[[presets]]
+id = "oilskin-all"
+name = "KatFXMatcap OilSkin (All Parts 0+)"
+description = "Fallback pass when meshes live in Component 0 to 2. Skips already patched parts."
+group = "KatFXMatcap OilSkin"
+recommended = false
+section_prefix = "TextureOverride"
+min_component = 0
+
+[[presets.insert_after]]
+anchor = "run = CommandListOverrideSharedResources"
+inject = 'run = CommandList\KatFXMatcap\OilSkin'
+
+[[presets.insert_before]]
+anchor = "run = CommandListCleanupSharedResources"
+inject = 'run = CommandList\KatFXMatcap\Clear'
