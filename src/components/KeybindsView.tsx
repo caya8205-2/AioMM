@@ -15,7 +15,6 @@ export interface KeybindsViewProps {
   mods: ModEntry[];
   conflicts: KeyConflict[];
   onPickFolder: () => void;
-  onToggleMod: (mod: ModEntry) => Promise<void>;
   onRefresh: () => Promise<void>;
   onNotify: (msg: string) => void;
 }
@@ -35,12 +34,10 @@ export function KeybindsView({
   mods,
   conflicts,
   onPickFolder,
-  onToggleMod,
   onRefresh,
   onNotify,
 }: KeybindsViewProps) {
   const [query, setQuery] = useState('');
-  const [busyModId, setBusyModId] = useState<string | null>(null);
   const [captureTarget, setCaptureTarget] = useState<ActiveBindingRow | null>(null);
   const [draftKey, setDraftKey] = useState('');
   const [showRawInput, setShowRawInput] = useState(false);
@@ -71,18 +68,8 @@ export function KeybindsView({
     return new Set(activeBindings.map((r) => r.mod.id)).size;
   }, [activeBindings]);
 
-  const crossModConflicts = useMemo(
-    () => conflicts.filter((c) => c.crossMod),
-    [conflicts],
-  );
-
-  const crossModKeySet = useMemo(
-    () => new Set(crossModConflicts.map((c) => c.normalizedKey)),
-    [crossModConflicts],
-  );
-
-  const sharedInModKeySet = useMemo(
-    () => new Set(conflicts.filter((c) => !c.crossMod).map((c) => c.normalizedKey)),
+  const conflictPairSet = useMemo(
+    () => new Set(conflicts.map((c) => `${c.modId}::${c.normalizedKey}`)),
     [conflicts],
   );
 
@@ -105,23 +92,24 @@ export function KeybindsView({
     });
   }, [activeBindings, query]);
 
-  const collidingOtherMods = useMemo(() => {
+  const collidingSameModSections = useMemo(() => {
     if (!captureTarget) return [];
     const trimmed = draftKey.trim();
     if (!trimmed) return [];
     const norm = normalizeKeyComboClient(trimmed);
-    const names = new Set<string>();
-    for (const mod of mods) {
-      if (!mod.enabled || mod.id === captureTarget.mod.id) continue;
-      for (const kb of mod.keybinds) {
-        const kbNorm = kb.normalizedKey || normalizeKeyComboClient(kb.rawKey);
-        if (kbNorm === norm) {
-          names.add(mod.displayName);
-        }
+    const sections: string[] = [];
+    for (const kb of captureTarget.mod.keybinds) {
+      const isSelf =
+        kb.iniPath === captureTarget.keybind.iniPath &&
+        kb.keyLineIdx === captureTarget.keybind.keyLineIdx;
+      if (isSelf) continue;
+      const kbNorm = kb.normalizedKey || normalizeKeyComboClient(kb.rawKey);
+      if (kbNorm === norm) {
+        sections.push(`[${kb.section}]`);
       }
     }
-    return Array.from(names);
-  }, [captureTarget, draftKey, mods]);
+    return sections;
+  }, [captureTarget, draftKey]);
 
   function openCaptureModal(mod: ModEntry, keybind: KeyBind) {
     setCaptureTarget({ mod, keybind });
@@ -186,17 +174,6 @@ export function KeybindsView({
     return () => window.removeEventListener('keydown', handleWindowKeyDown, true);
   }, [captureTarget, savingKey]);
 
-  async function handleDisableMod(modId: string) {
-    const mod = modsById.get(modId);
-    if (!mod || !mod.enabled || busyModId) return;
-    setBusyModId(modId);
-    try {
-      await onToggleMod(mod);
-    } finally {
-      setBusyModId(null);
-    }
-  }
-
   async function handleSaveKeybind(e?: React.FormEvent) {
     e?.preventDefault();
     if (!captureTarget) return;
@@ -231,7 +208,7 @@ export function KeybindsView({
         </div>
         <h1 className="mt-4 text-lg font-medium text-ink">No Mods folder selected</h1>
         <p className="mt-1.5 max-w-sm text-sm text-ink-mute">
-          Pick your 3DMigoto or XXMI Mods folder first to inspect active hotkeys and fix key collisions across mods.
+          Pick your 3DMigoto or XXMI Mods folder first to inspect active hotkeys and fix duplicate keys within each mod.
         </p>
         <button
           type="button"
@@ -274,37 +251,40 @@ export function KeybindsView({
         </h1>
         <p className="text-sm text-ink-mute">
           {activeBindings.length} active {activeBindings.length === 1 ? 'hotkey' : 'hotkeys'} across{' '}
-          {activeModWithKeysCount} enabled {activeModWithKeysCount === 1 ? 'mod' : 'mods'}
+          {activeModWithKeysCount} enabled {activeModWithKeysCount === 1 ? 'mod' : 'mods'} (checks duplicate keys inside each mod)
         </p>
       </header>
 
       <section className="mt-6" aria-label="Conflict status">
-        {crossModConflicts.length === 0 ? (
+        {conflicts.length === 0 ? (
           <div className="rounded-md border border-status-green/25 bg-status-green-soft px-4 py-3 text-sm text-status-green">
-            No cross-mod hotkey conflicts across active mods.
+            No duplicate hotkeys detected inside any active mod.
           </div>
         ) : (
           <div className="space-y-3">
             <div className="rounded-md border border-status-red/35 bg-status-red-soft px-4 py-3 text-sm text-status-red">
-              {crossModConflicts.length} cross-mod {crossModConflicts.length === 1 ? 'keybind collision' : 'keybind collisions'} detected. Pressing a shared key triggers multiple active mods at the same time.
+              {conflicts.length} same-mod hotkey {conflicts.length === 1 ? 'conflict' : 'conflicts'} detected. Multiple toggle sections inside the same mod share a key and will trigger together.
             </div>
 
             <div className="space-y-3">
-              {crossModConflicts.map((conflict) => {
+              {conflicts.map((conflict) => {
                 const sampleRawKey =
                   conflict.entries[0]?.keybind.rawKey ?? conflict.normalizedKey;
-                const modCount = new Set(conflict.entries.map((e) => e.modId)).size;
+                const mod = modsById.get(conflict.modId);
 
                 return (
                   <div
-                    key={conflict.normalizedKey}
+                    key={conflict.id}
                     className="rounded-lg border border-status-red/40 bg-surface p-4"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-3">
                       <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="text-sm font-medium text-ink">
+                          {conflict.modDisplayName}
+                        </span>
                         <Keycap rawKey={sampleRawKey} size="md" tone="conflict" />
                         <span className="text-xs text-status-red">
-                          Bound in {modCount} active mods
+                          Bound to {conflict.entries.length} sections in this mod
                         </span>
                       </div>
                       <span className="font-mono text-xs text-ink-mute">
@@ -313,55 +293,40 @@ export function KeybindsView({
                     </div>
 
                     <div className="mt-3 divide-y divide-hairline">
-                      {conflict.entries.map((entry) => {
-                        const mod = modsById.get(entry.modId);
-                        const isBusy = busyModId === entry.modId;
-                        return (
-                          <div
-                            key={`${entry.modId}-${entry.keybind.iniPath}-${entry.keybind.keyLineIdx}`}
-                            className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-                          >
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-sm font-medium text-ink">
-                                  {entry.modDisplayName}
+                      {conflict.entries.map((entry) => (
+                        <div
+                          key={`${entry.modId}-${entry.keybind.iniPath}-${entry.keybind.keyLineIdx}`}
+                          className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-medium text-ink">
+                                {cleanSectionName(entry.keybind.section)}
+                              </span>
+                              {entry.keybind.variable && (
+                                <span className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-xs text-ink-body">
+                                  {entry.keybind.variable}
                                 </span>
-                                <span className="text-xs text-ink-mute">
-                                  {cleanSectionName(entry.keybind.section)}
-                                </span>
-                                {entry.keybind.variable && (
-                                  <span className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-xs text-ink-body">
-                                    {entry.keybind.variable}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="mt-0.5 break-all font-mono text-xs text-ink-mute">
-                                {entry.keybind.iniRelName} [{entry.keybind.section}]
-                              </p>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
-                              {mod && (
-                                <button
-                                  type="button"
-                                  onClick={() => openCaptureModal(mod, entry.keybind)}
-                                  className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-hairline-strong bg-surface-elevated px-3 text-sm font-medium text-ink-bright transition-colors hover:bg-surface-card"
-                                >
-                                  Change Key
-                                </button>
                               )}
+                            </div>
+                            <p className="mt-0.5 break-all font-mono text-xs text-ink-mute">
+                              {entry.keybind.iniRelName} [{entry.keybind.section}]
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                            {mod && (
                               <button
                                 type="button"
-                                disabled={!mod || isBusy}
-                                onClick={() => void handleDisableMod(entry.modId)}
-                                className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-hairline bg-transparent px-3 text-sm font-medium text-ink-body transition-colors hover:border-status-red/40 hover:bg-status-red-soft hover:text-status-red disabled:cursor-not-allowed disabled:text-ink-ash"
+                                onClick={() => openCaptureModal(mod, entry.keybind)}
+                                className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-hairline-strong bg-surface-elevated px-3 text-sm font-medium text-ink-bright transition-colors hover:bg-surface-card"
                               >
-                                {isBusy ? 'Disabling...' : 'Disable Mod'}
+                                Change Key
                               </button>
-                            </div>
+                            )}
                           </div>
-                        );
-                      })}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );
@@ -423,8 +388,9 @@ export function KeybindsView({
         ) : (
           <div className="mt-4 divide-y divide-hairline overflow-hidden rounded-lg border border-hairline bg-surface">
             {filteredBindings.map(({ mod, keybind }) => {
-              const isCrossMod = crossModKeySet.has(keybind.normalizedKey);
-              const isSharedInMod = sharedInModKeySet.has(keybind.normalizedKey);
+              const isSameModConflict = conflictPairSet.has(
+                `${mod.id}::${keybind.normalizedKey}`,
+              );
 
               return (
                 <div
@@ -439,14 +405,9 @@ export function KeybindsView({
                       <span className="text-sm text-ink-body">
                         {cleanSectionName(keybind.section)}
                       </span>
-                      {isSharedInMod && (
-                        <span className="rounded-xs bg-status-blue-soft px-2 py-0.5 text-xs font-medium text-status-blue">
-                          Shared in mod
-                        </span>
-                      )}
-                      {isCrossMod && (
+                      {isSameModConflict && (
                         <span className="rounded-xs bg-status-red-soft px-2 py-0.5 text-xs font-medium text-status-red">
-                          Cross-mod conflict
+                          Duplicate in mod
                         </span>
                       )}
                     </div>
@@ -467,7 +428,7 @@ export function KeybindsView({
                     <Keycap
                       rawKey={keybind.rawKey}
                       size="md"
-                      tone={isCrossMod ? 'conflict' : 'default'}
+                      tone={isSameModConflict ? 'conflict' : 'default'}
                     />
                     <button
                       type="button"
@@ -535,7 +496,7 @@ export function KeybindsView({
                     <Keycap
                       rawKey={draftKey}
                       size="md"
-                      tone={collidingOtherMods.length > 0 ? 'conflict' : 'default'}
+                      tone={collidingSameModSections.length > 0 ? 'conflict' : 'default'}
                     />
                   ) : (
                     <span className="text-sm text-ink-mute">Waiting for key press...</span>
@@ -546,12 +507,13 @@ export function KeybindsView({
                 </code>
               </div>
 
-              {collidingOtherMods.length > 0 && (
+              {collidingSameModSections.length > 0 && (
                 <div
                   role="status"
                   className="mt-3 rounded-md border border-status-yellow/35 bg-status-yellow-soft px-3 py-2.5 text-xs text-status-yellow"
                 >
-                  This key is already bound in {collidingOtherMods.join(', ')}. Saving it will create a cross-mod conflict.
+                  Already used by {collidingSameModSections.join(', ')} inside{' '}
+                  {captureTarget.mod.displayName}. Saving this key will trigger them together.
                 </div>
               )}
 

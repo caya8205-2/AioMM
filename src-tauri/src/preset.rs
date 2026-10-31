@@ -22,6 +22,8 @@ pub struct Preset {
     pub description: String,
     #[serde(default)]
     pub group: Option<String>,
+    #[serde(default, alias = "source_url")]
+    pub source_url: Option<String>,
     #[serde(default)]
     pub recommended: bool,
     #[serde(alias = "section_prefix")]
@@ -120,6 +122,15 @@ pub fn save_custom_preset(mods_root: &Path, mut preset: Preset) -> Result<Vec<Pr
         .group
         .map(|g| g.trim().to_string())
         .filter(|g| !g.is_empty());
+    preset.source_url = preset
+        .source_url
+        .map(|u| u.trim().to_string())
+        .filter(|u| !u.is_empty());
+    if let Some(ref url) = preset.source_url {
+        if !url.starts_with("https://") && !url.starts_with("http://") {
+            return Err("Mod page URL must start with https:// or http://.".into());
+        }
+    }
     preset.insert_after = preset
         .insert_after
         .into_iter()
@@ -218,9 +229,17 @@ mod tests {
         assert_eq!(list[0].id, "oilskin-3plus");
         assert!(list[0].builtin);
         assert!(list[0].recommended);
+        assert_eq!(
+            list[0].source_url.as_deref(),
+            Some("https://gamebanana.com/mods/733773")
+        );
         assert_eq!(list[0].min_component, Some(3));
         assert_eq!(list[1].id, "oilskin-all");
         assert!(list[1].builtin);
+        assert_eq!(
+            list[1].source_url.as_deref(),
+            Some("https://gamebanana.com/mods/733773")
+        );
         assert_eq!(list[1].min_component, Some(0));
     }
 
@@ -232,6 +251,7 @@ mod tests {
             name: "ORFix All Sections".into(),
             description: "Injects ORFix applier into TextureOverride sections.".into(),
             group: None,
+            source_url: Some("https://gamebanana.com/mods/733773".into()),
             recommended: false,
             section_prefix: "TextureOverride".into(),
             min_component: None,
@@ -249,6 +269,10 @@ mod tests {
         assert!(!saved.builtin);
         assert_eq!(saved.min_component, None);
         assert_eq!(saved.group, None);
+        assert_eq!(
+            saved.source_url.as_deref(),
+            Some("https://gamebanana.com/mods/733773")
+        );
 
         let updated = Preset {
             name: "ORFix Component 1+".into(),
@@ -284,6 +308,7 @@ mod tests {
     fn preset_json_uses_exact_typescript_camel_case_keys() {
         let p = &builtin_presets()[0];
         let json = serde_json::to_value(p).unwrap();
+        assert!(json.get("sourceUrl").is_some());
         assert!(json.get("sectionPrefix").is_some());
         assert!(json.get("minComponent").is_some());
         assert!(json.get("insertAfter").is_some());

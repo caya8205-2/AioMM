@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --port 4173 --strictPort"
+    "preview": "vite preview --port 4173 --strictPort",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "npm run build && cargo build --release --manifest-path src-tauri/Cargo.toml --features custom-protocol"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.3.5",

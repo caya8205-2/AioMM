@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ActiveView,
   DetectedFolder,
@@ -285,11 +285,6 @@ export default function App() {
   const presets = snapshot?.presets ?? [];
   const conflicts = snapshot?.conflicts ?? [];
 
-  const crossModConflictCount = useMemo(
-    () => conflicts.filter((c) => c.crossMod).length,
-    [conflicts],
-  );
-
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-canvas text-ink-body sm:flex-row">
       <Sidebar
@@ -302,7 +297,7 @@ export default function App() {
         onPickFolder={() => void handlePickFolder()}
         onRefresh={() => void handleRefresh()}
         totalMods={mods.length}
-        crossModConflictCount={crossModConflictCount}
+        conflictCount={conflicts.length}
         isPreviewMode={!IS_TAURI}
       />
 
@@ -355,7 +350,6 @@ export default function App() {
               mods={mods}
               conflicts={conflicts}
               onPickFolder={() => void handlePickFolder()}
-              onToggleMod={handleToggleMod}
               onRefresh={handleRefresh}
               onNotify={notify}
             />

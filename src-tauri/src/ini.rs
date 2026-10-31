@@ -632,6 +632,7 @@ mod tests {
             name: "Multi".into(),
             description: String::new(),
             group: None,
+            source_url: None,
             recommended: false,
             section_prefix: "TextureOverride".into(),
             min_component: None,

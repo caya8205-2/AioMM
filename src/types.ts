@@ -10,6 +10,7 @@ export interface Preset {
   name: string;
   description: string;
   group: string | null;
+  sourceUrl: string | null;
   recommended: boolean;
   sectionPrefix: string;
   minComponent: number | null;
@@ -63,8 +64,11 @@ export interface ConflictMember {
 }
 
 export interface KeyConflict {
+  id: string;
+  modId: string;
+  modDisplayName: string;
+  modPath: string;
   normalizedKey: string;
-  crossMod: boolean;
   entries: ConflictMember[];
 }
 

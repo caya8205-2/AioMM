@@ -61,8 +61,11 @@ pub struct ConflictMember {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyConflict {
+    pub id: String,
+    pub mod_id: String,
+    pub mod_display_name: String,
+    pub mod_path: String,
     pub normalized_key: String,
-    pub cross_mod: bool,
     pub entries: Vec<ConflictMember>,
 }
 
@@ -309,17 +312,18 @@ pub fn find_preview_image(mod_dir: &Path) -> Option<String> {
 }
 
 pub fn find_key_conflicts(mods: &[ModEntry]) -> Vec<KeyConflict> {
-    let mut grouped: BTreeMap<String, Vec<ConflictMember>> = BTreeMap::new();
+    let mut conflicts = Vec::new();
 
     for m in mods {
         if !m.enabled {
             continue;
         }
+        let mut by_key: BTreeMap<String, Vec<ConflictMember>> = BTreeMap::new();
         for kb in &m.keybinds {
             if kb.normalized_key.is_empty() {
                 continue;
             }
-            grouped
+            by_key
                 .entry(kb.normalized_key.clone())
                 .or_default()
                 .push(ConflictMember {
@@ -329,25 +333,21 @@ pub fn find_key_conflicts(mods: &[ModEntry]) -> Vec<KeyConflict> {
                     keybind: kb.clone(),
                 });
         }
+
+        for (normalized_key, entries) in by_key {
+            if entries.len() >= 2 {
+                conflicts.push(KeyConflict {
+                    id: format!("{}::{}", m.id, normalized_key),
+                    mod_id: m.id.clone(),
+                    mod_display_name: m.display_name.clone(),
+                    mod_path: m.path.clone(),
+                    normalized_key,
+                    entries,
+                });
+            }
+        }
     }
 
-    let mut conflicts: Vec<KeyConflict> = grouped
-        .into_iter()
-        .filter_map(|(normalized_key, entries)| {
-            if entries.len() < 2 {
-                return None;
-            }
-            let distinct_mods: HashSet<&str> = entries.iter().map(|e| e.mod_id.as_str()).collect();
-            Some(KeyConflict {
-                normalized_key,
-                cross_mod: distinct_mods.len() > 1,
-                entries,
-            })
-        })
-        .collect();
-
-    conflicts
-        .sort_by(|a, b| (!a.cross_mod, &a.normalized_key).cmp(&(!b.cross_mod, &b.normalized_key)));
     conflicts
 }
 
@@ -632,14 +632,11 @@ mod tests {
         assert_eq!(evelyn_mod.display_name, "Evelyn Old");
         assert!(evelyn_mod.keybinds.is_empty());
 
-        assert_eq!(snap.conflicts.len(), 2);
-        assert_eq!(snap.conflicts[0].normalized_key, "up");
-        assert!(snap.conflicts[0].cross_mod);
+        // Cross-mod shared VK_UP between Jane and Burnice is NOT flagged; only Jane's internal VK_RIGHT duplicate is a conflict.
+        assert_eq!(snap.conflicts.len(), 1);
+        assert_eq!(snap.conflicts[0].mod_id, "JaneDoe_Jacket");
+        assert_eq!(snap.conflicts[0].normalized_key, "right");
         assert_eq!(snap.conflicts[0].entries.len(), 2);
-
-        assert_eq!(snap.conflicts[1].normalized_key, "right");
-        assert!(!snap.conflicts[1].cross_mod);
-        assert_eq!(snap.conflicts[1].entries.len(), 2);
 
         let _ = fs::remove_dir_all(&root);
     }

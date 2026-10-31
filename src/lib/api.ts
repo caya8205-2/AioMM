@@ -50,6 +50,7 @@ const PREVIEW_PRESETS_INIT: Preset[] = [
     name: 'KatFXMatcap OilSkin (Body Parts 3+)',
     description: 'Recommended first pass: applies OilSkin and Clear to Component 3 and higher.',
     group: 'KatFXMatcap OilSkin',
+    sourceUrl: 'https://gamebanana.com/mods/733773',
     recommended: true,
     sectionPrefix: 'TextureOverride',
     minComponent: 3,
@@ -72,6 +73,7 @@ const PREVIEW_PRESETS_INIT: Preset[] = [
     name: 'KatFXMatcap OilSkin (All Parts 0+)',
     description: 'Fallback pass when meshes live in Component 0 to 2. Skips already patched parts.',
     group: 'KatFXMatcap OilSkin',
+    sourceUrl: 'https://gamebanana.com/mods/733773',
     recommended: false,
     sectionPrefix: 'TextureOverride',
     minComponent: 0,
@@ -95,8 +97,8 @@ let previewPresets: Preset[] = [...PREVIEW_PRESETS_INIT];
 
 const previewInis: Record<string, PreviewIniState> = {
   'PREVIEW:\\XXMI\\ZZMI\\Mods\\JaneDoe_Jacket\\merged.ini': {
-    original: `[KeySwapJacket]\nkey = no_ctrl no_alt VK_UP\ntype = cycle\n$jacket = 0,1\n\n[TextureOverrideComponent0]\nhash = 11aa22\nrun = CommandListOverrideSharedResources\nib = ResourceIB0\nrun = CommandListCleanupSharedResources\n\n[TextureOverrideComponent3]\nhash = 33bb44\n\trun = CommandListOverrideSharedResources\n\tib = ResourceIB3\n\trun = CommandListCleanupSharedResources\n`,
-    current: `[KeySwapJacket]\nkey = no_ctrl no_alt VK_UP\ntype = cycle\n$jacket = 0,1\n\n[TextureOverrideComponent0]\nhash = 11aa22\nrun = CommandListOverrideSharedResources\nib = ResourceIB0\nrun = CommandListCleanupSharedResources\n\n[TextureOverrideComponent3]\nhash = 33bb44\n\trun = CommandListOverrideSharedResources\n\tib = ResourceIB3\n\trun = CommandListCleanupSharedResources\n`,
+    original: `[KeySwapJacket]\nkey = no_ctrl no_alt VK_UP\ntype = cycle\n$jacket = 0,1\n\n[KeySwapHair]\nkey = VK_UP\ntype = cycle\n$hair = 0,1\n\n[TextureOverrideComponent0]\nhash = 11aa22\nrun = CommandListOverrideSharedResources\nib = ResourceIB0\nrun = CommandListCleanupSharedResources\n\n[TextureOverrideComponent3]\nhash = 33bb44\n\trun = CommandListOverrideSharedResources\n\tib = ResourceIB3\n\trun = CommandListCleanupSharedResources\n`,
+    current: `[KeySwapJacket]\nkey = no_ctrl no_alt VK_UP\ntype = cycle\n$jacket = 0,1\n\n[KeySwapHair]\nkey = VK_UP\ntype = cycle\n$hair = 0,1\n\n[TextureOverrideComponent0]\nhash = 11aa22\nrun = CommandListOverrideSharedResources\nib = ResourceIB0\nrun = CommandListCleanupSharedResources\n\n[TextureOverrideComponent3]\nhash = 33bb44\n\trun = CommandListOverrideSharedResources\n\tib = ResourceIB3\n\trun = CommandListCleanupSharedResources\n`,
     hasBackup: false,
   },
   'PREVIEW:\\XXMI\\ZZMI\\Mods\\JaneDoe_Jacket\\Slot0\\DISABLED_base.ini': {
@@ -304,9 +306,10 @@ function buildPreviewSnapshot(root: string): WorkspaceSnapshot {
     };
   });
 
-  const byKey = new Map<string, KeyConflict['entries']>();
+  const conflicts: KeyConflict[] = [];
   for (const m of mods) {
     if (!m.enabled) continue;
+    const byKey = new Map<string, KeyConflict['entries']>();
     for (const kb of m.keybinds) {
       const list = byKey.get(kb.normalizedKey) ?? [];
       list.push({
@@ -317,17 +320,17 @@ function buildPreviewSnapshot(root: string): WorkspaceSnapshot {
       });
       byKey.set(kb.normalizedKey, list);
     }
-  }
-
-  const conflicts: KeyConflict[] = [];
-  for (const [normalizedKey, entries] of byKey.entries()) {
-    if (entries.length > 1) {
-      const distinctMods = new Set(entries.map((e) => e.modId)).size;
-      conflicts.push({
-        normalizedKey,
-        crossMod: distinctMods > 1,
-        entries,
-      });
+    for (const [normalizedKey, entries] of byKey.entries()) {
+      if (entries.length >= 2) {
+        conflicts.push({
+          id: `${m.id}::${normalizedKey}`,
+          modId: m.id,
+          modDisplayName: m.displayName,
+          modPath: m.path,
+          normalizedKey,
+          entries,
+        });
+      }
     }
   }
 
@@ -471,5 +474,13 @@ export const api = {
   async revealInExplorer(path: string): Promise<void> {
     if (!IS_TAURI) return;
     return invoke<void>('reveal_in_explorer', { path });
+  },
+
+  async openExternalUrl(url: string): Promise<void> {
+    if (!IS_TAURI) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    return invoke<void>('open_external_url', { url });
   },
 };

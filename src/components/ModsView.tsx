@@ -445,8 +445,12 @@ export function ModsView(props: ModsViewProps): JSX.Element {
 
                 const uniqueKeybinds: typeof mod.keybinds = [];
                 const seenKeys = new Set<string>();
+                const duplicateKeys = new Set<string>();
                 for (const kb of mod.keybinds) {
-                  if (!seenKeys.has(kb.normalizedKey)) {
+                  if (!kb.normalizedKey) continue;
+                  if (seenKeys.has(kb.normalizedKey)) {
+                    duplicateKeys.add(kb.normalizedKey);
+                  } else {
                     seenKeys.add(kb.normalizedKey);
                     uniqueKeybinds.push(kb);
                   }
@@ -491,6 +495,11 @@ export function ModsView(props: ModsViewProps): JSX.Element {
                           {mod.appliedPresetIds.length > 0 && (
                             <span className="shrink-0 rounded-xs border border-status-green/30 bg-status-green-soft px-1.5 py-0.5 text-[11px] font-medium text-status-green">
                               Patched
+                            </span>
+                          )}
+                          {duplicateKeys.size > 0 && (
+                            <span className="shrink-0 rounded-xs border border-status-red/30 bg-status-red-soft px-1.5 py-0.5 text-[11px] font-medium text-status-red">
+                              Key conflict
                             </span>
                           )}
                           {!mod.enabled && (

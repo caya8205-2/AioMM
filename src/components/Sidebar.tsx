@@ -13,7 +13,7 @@ export interface SidebarProps {
   onPickFolder: () => void;
   onRefresh: () => void;
   totalMods: number;
-  crossModConflictCount: number;
+  conflictCount: number;
   isPreviewMode: boolean;
 }
 
@@ -275,7 +275,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     onPickFolder,
     onRefresh,
     totalMods,
-    crossModConflictCount,
+    conflictCount,
     isPreviewMode,
   } = props;
 
@@ -299,8 +299,8 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       label: 'Keybinds',
       icon: Icons.keyboard,
       badge:
-        crossModConflictCount > 0
-          ? { text: String(crossModConflictCount), tone: 'danger' }
+        conflictCount > 0
+          ? { text: String(conflictCount), tone: 'danger' }
           : undefined,
     },
     {

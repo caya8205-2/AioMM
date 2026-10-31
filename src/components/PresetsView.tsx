@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import clsx from 'clsx';
 import type { AnchorInsert, Preset } from '../types';
+import { api } from '../lib/api';
 import { Icon, Icons } from './Icon';
 
 export interface PresetsViewProps {
@@ -23,6 +24,7 @@ const FALLBACK_BUILTIN_PRESETS: Preset[] = [
     description:
       'Recommended first pass: applies OilSkin and Clear to Component 3 and higher.',
     group: 'KatFXMatcap OilSkin',
+    sourceUrl: 'https://gamebanana.com/mods/733773',
     recommended: true,
     sectionPrefix: 'TextureOverride',
     minComponent: 3,
@@ -46,6 +48,7 @@ const FALLBACK_BUILTIN_PRESETS: Preset[] = [
     description:
       'Fallback pass when meshes live in Component 0 to 2. Skips already patched parts.',
     group: 'KatFXMatcap OilSkin',
+    sourceUrl: 'https://gamebanana.com/mods/733773',
     recommended: false,
     sectionPrefix: 'TextureOverride',
     minComponent: 0,
@@ -100,6 +103,7 @@ export function PresetsView({
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [group, setGroup] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
   const [description, setDescription] = useState('');
   const [sectionPrefix, setSectionPrefix] = useState('TextureOverride');
   const [componentFilter, setComponentFilter] = useState<ComponentFilterChoice>('3plus');
@@ -130,6 +134,7 @@ export function PresetsView({
   function resetForm() {
     setName('');
     setGroup('');
+    setSourceUrl('');
     setDescription('');
     setSectionPrefix('TextureOverride');
     setComponentFilter('3plus');
@@ -178,6 +183,16 @@ export function PresetsView({
       return;
     }
 
+    const trimmedUrl = sourceUrl.trim();
+    if (
+      trimmedUrl &&
+      !trimmedUrl.startsWith('https://') &&
+      !trimmedUrl.startsWith('http://')
+    ) {
+      setFormError('Mod page URL must start with https:// or http://.');
+      return;
+    }
+
     const existingIds = new Set(effectivePresets.map((p) => p.id));
     const minComponent =
       componentFilter === '3plus' ? 3 : componentFilter === '0plus' ? 0 : null;
@@ -189,6 +204,7 @@ export function PresetsView({
         description.trim() ||
         `Custom INI injection rule targeting ${sectionPrefix.trim() || 'matching'} sections.`,
       group: group.trim() || null,
+      sourceUrl: trimmedUrl || null,
       recommended: false,
       sectionPrefix: sectionPrefix.trim(),
       minComponent,
@@ -247,18 +263,37 @@ export function PresetsView({
             <p className="mt-1.5 text-sm text-ink-body">{preset.description}</p>
           </div>
 
-          {!preset.builtin && root && (
-            <button
-              type="button"
-              disabled={isDeleting}
-              onClick={() => void handleDelete(preset.id)}
-              className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-hairline bg-surface-elevated px-3 text-sm font-medium text-ink-body transition-colors hover:border-status-red/40 hover:bg-status-red-soft hover:text-status-red disabled:cursor-not-allowed disabled:text-ink-ash"
-            >
-              <Icon icon={Icons.trash} size={14} />
-              {isDeleting ? 'Deleting...' : 'Delete'}
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+            {preset.sourceUrl && (
+              <button
+                type="button"
+                onClick={() => void api.openExternalUrl(preset.sourceUrl!)}
+                className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-hairline-strong bg-surface-elevated px-3 text-sm font-medium text-ink-bright transition-colors hover:bg-surface-card"
+              >
+                <Icon icon={Icons.external} size={14} className="text-ink-mute" />
+                {preset.builtin ? 'Get Base Mod (GameBanana)' : 'Open Mod Page'}
+              </button>
+            )}
+            {!preset.builtin && root && (
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => void handleDelete(preset.id)}
+                className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-hairline bg-surface-elevated px-3 text-sm font-medium text-ink-body transition-colors hover:border-status-red/40 hover:bg-status-red-soft hover:text-status-red disabled:cursor-not-allowed disabled:text-ink-ash"
+              >
+                <Icon icon={Icons.trash} size={14} />
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            )}
+          </div>
         </div>
+
+        {preset.builtin && preset.sourceUrl && (
+          <div className="mt-3 rounded-md border border-hairline bg-surface-elevated px-3 py-2 text-xs text-ink-body">
+            Requires the base texture mod in your Mods folder first (not built into XXMI):{' '}
+            <span className="font-mono text-ink-mute">{preset.sourceUrl}</span>
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-ink-mute">Target sections:</span>
@@ -400,21 +435,44 @@ export function PresetsView({
               </div>
             </div>
 
-            <div>
-              <label
-                htmlFor="preset-description"
-                className="block text-xs font-medium text-ink-body"
-              >
-                Description
-              </label>
-              <input
-                id="preset-description"
-                type="text"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Applies custom matcap call to character body components."
-                className="mt-1.5 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 text-sm text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
-              />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="preset-description"
+                  className="block text-xs font-medium text-ink-body"
+                >
+                  Description
+                </label>
+                <input
+                  id="preset-description"
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Applies custom matcap call to character body components."
+                  className="mt-1.5 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 text-sm text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="preset-source-url"
+                  className="block text-xs font-medium text-ink-body"
+                >
+                  Mod Download Page URL{' '}
+                  <span className="font-normal text-ink-mute">(optional)</span>
+                </label>
+                <input
+                  id="preset-source-url"
+                  type="url"
+                  value={sourceUrl}
+                  onChange={(e) => {
+                    setSourceUrl(e.target.value);
+                    setFormError(null);
+                  }}
+                  placeholder="https://gamebanana.com/mods/..."
+                  className="mt-1.5 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 font-mono text-xs text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">

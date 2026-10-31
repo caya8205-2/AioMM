@@ -83,6 +83,19 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
+        return Err("Only http:// and https:// URLs are allowed.".into());
+    }
+    Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", trimmed])
+        .spawn()
+        .map_err(|e| format!("Failed to open browser: {e}"))?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -98,6 +111,7 @@ pub fn run() {
             save_preset,
             delete_preset,
             reveal_in_explorer,
+            open_external_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running modctl tauri application");
@@ -129,7 +143,7 @@ mod integration_tests {
         let mod_a = root.join("Miyabi_Coat");
         fs::create_dir_all(&mod_a).unwrap();
         let ini_a = mod_a.join("merged.ini");
-        let ini_a_orig = "[KeySwap]\r\nkey = no_ctrl no_alt VK_UP\r\n$swap = 0,1\r\n\r\n[TextureOverrideComponent0]\r\nhash = 111\r\nrun = CommandListOverrideSharedResources\r\nrun = CommandListCleanupSharedResources\r\n\r\n[TextureOverrideComponent3]\r\nhash = 333\r\n\trun = CommandListOverrideSharedResources\r\n\trun = CommandListCleanupSharedResources\r\n";
+        let ini_a_orig = "[KeySwapCoat]\r\nkey = no_ctrl no_alt VK_UP\r\n$swap = 0,1\r\n\r\n[KeySwapHair]\r\nkey = VK_UP\r\n$hair = 0,1\r\n\r\n[TextureOverrideComponent0]\r\nhash = 111\r\nrun = CommandListOverrideSharedResources\r\nrun = CommandListCleanupSharedResources\r\n\r\n[TextureOverrideComponent3]\r\nhash = 333\r\n\trun = CommandListOverrideSharedResources\r\n\trun = CommandListCleanupSharedResources\r\n";
         fs::write(&ini_a, ini_a_orig).unwrap();
 
         let mod_b = root.join("Yanagi_Glasses");
@@ -140,8 +154,9 @@ mod integration_tests {
         let snap1 = scan_mods_folder(root_str.clone()).unwrap();
         assert_eq!(snap1.mods.len(), 2);
         assert_eq!(snap1.conflicts.len(), 1);
-        assert!(snap1.conflicts[0].cross_mod);
+        assert_eq!(snap1.conflicts[0].mod_id, "Miyabi_Coat");
         assert_eq!(snap1.conflicts[0].normalized_key, "up");
+        assert_eq!(snap1.conflicts[0].entries.len(), 2);
 
         let ini_a_str = ini_a.to_string_lossy().to_string();
         let dry =
@@ -165,14 +180,9 @@ mod integration_tests {
         assert_eq!(app_all.injected_lines, 2);
         assert_eq!(app_all.already_applied_lines, 2);
 
-        let yanagi = snap2
-            .mods
-            .iter()
-            .find(|m| m.id == "Yanagi_Glasses")
-            .unwrap();
-        let kb_line = yanagi.keybinds[0].key_line_idx;
+        let kb_line = miyabi.keybinds[1].key_line_idx;
         update_keybind(
-            ini_b.to_string_lossy().to_string(),
+            ini_a_str.clone(),
             kb_line,
             "no_ctrl no_alt VK_F9".into(),
         )
@@ -188,6 +198,7 @@ mod integration_tests {
                 name: "Custom Shader FX".into(),
                 description: "Test custom preset".into(),
                 group: Some("Custom".into()),
+                source_url: Some("https://gamebanana.com/mods/733773".into()),
                 recommended: false,
                 section_prefix: "TextureOverride".into(),
                 min_component: Some(3),

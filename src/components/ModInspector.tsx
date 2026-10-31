@@ -206,6 +206,27 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
     return Object.values(dryRuns).some((d) => d.hasBackup);
   }, [selectedIni, dryRuns]);
 
+  const duplicateModKeys = useMemo(() => {
+    const seen = new Set<string>();
+    const dup = new Set<string>();
+    for (const kb of mod.keybinds) {
+      if (!kb.normalizedKey) continue;
+      if (seen.has(kb.normalizedKey)) dup.add(kb.normalizedKey);
+      else seen.add(kb.normalizedKey);
+    }
+    return dup;
+  }, [mod.keybinds]);
+
+  async function handleOpenExternalUrl(url: string) {
+    try {
+      await api.openExternalUrl(url);
+    } catch (err) {
+      onNotify(
+        err instanceof Error ? err.message : 'Could not open link in browser.',
+      );
+    }
+  }
+
   async function handleOpenFolder() {
     try {
       await api.revealInExplorer(mod.path);
@@ -575,6 +596,34 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
                         )}
                       </div>
 
+                      {(p3.sourceUrl || pAll.sourceUrl) && (
+                        <div className="flex flex-col gap-2 rounded-md border border-hairline bg-surface-elevated p-2.5">
+                          <p className="text-[12px] leading-relaxed text-ink-body">
+                            Not included with XXMI: download and place the{' '}
+                            <span className="font-medium text-ink">
+                              KatFXMatcap
+                            </span>{' '}
+                            texture mod in your Mods folder first.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleOpenExternalUrl(
+                                p3.sourceUrl ?? pAll.sourceUrl!,
+                              )
+                            }
+                            className="inline-flex min-h-[44px] items-center justify-center gap-1.5 self-start rounded-md border border-hairline-strong bg-surface-card px-2.5 py-1 text-[12px] font-medium text-ink-bright transition-colors hover:border-white/30 sm:min-h-[32px]"
+                          >
+                            <Icon
+                              icon={Icons.external}
+                              size={13}
+                              className="shrink-0 text-ink-mute"
+                            />
+                            <span>Get Base Mod on GameBanana</span>
+                          </button>
+                        </div>
+                      )}
+
                       {readyDto && (
                         <div>
                           <span className="inline-flex items-center gap-1.5 rounded-xs border border-status-green/30 bg-status-green-soft px-2 py-1 text-[12px] font-medium text-status-green">
@@ -766,6 +815,23 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
                             )}
                           </div>
 
+                          {preset.sourceUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleOpenExternalUrl(preset.sourceUrl!)
+                              }
+                              className="inline-flex min-h-[44px] items-center gap-1.5 self-start rounded-md border border-hairline bg-surface-elevated px-2.5 py-1 text-[12px] font-medium text-ink-bright transition-colors hover:border-hairline-strong sm:min-h-[32px]"
+                            >
+                              <Icon
+                                icon={Icons.external}
+                                size={13}
+                                className="shrink-0 text-ink-mute"
+                              />
+                              <span>Open Required Mod Page</span>
+                            </button>
+                          )}
+
                           {isReady && dr && (
                             <div>
                               <span className="inline-flex items-center gap-1.5 rounded-xs border border-status-green/30 bg-status-green-soft px-2 py-1 text-[12px] font-medium text-status-green">
@@ -855,9 +921,16 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
 
         {mod.keybinds.length > 0 && (
           <section className="flex flex-col gap-2">
-            <h3 className="text-[13px] font-medium text-ink-charcoal">
-              Mod Hotkeys
-            </h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-[13px] font-medium text-ink-charcoal">
+                Mod Hotkeys
+              </h3>
+              {duplicateModKeys.size > 0 && (
+                <span className="text-[11px] font-medium text-status-red">
+                  Duplicate key in mod
+                </span>
+              )}
+            </div>
             <div className="flex flex-col gap-1.5 rounded-md border border-hairline bg-surface-card p-3">
               {mod.keybinds.map((kb, idx) => (
                 <div
@@ -867,7 +940,15 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
                   <span className="truncate text-ink-body" title={kb.section}>
                     {kb.section.replace(/^Key/i, '') || kb.section}
                   </span>
-                  <Keycap rawKey={kb.rawKey} size="sm" />
+                  <Keycap
+                    rawKey={kb.rawKey}
+                    size="sm"
+                    tone={
+                      duplicateModKeys.has(kb.normalizedKey)
+                        ? 'conflict'
+                        : 'default'
+                    }
+                  />
                 </div>
               ))}
             </div>
