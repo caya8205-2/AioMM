@@ -76,7 +76,7 @@ jobs:
       - name: Sync versions
         run: npm run version:sync
 
-      - name: Build AIOMM (Windows)
+      - name: Build AioMM (Windows)
         run: npm run tauri:build
 
       - name: Prepare Release Assets
@@ -84,9 +84,9 @@ jobs:
         run: |
           mkdir -p release-assets
           version="${{ needs.preflight.outputs.version }}"
-          cp src-tauri/target/release/aiomm.exe release-assets/AIOMM.exe
+          cp src-tauri/target/release/aiomm.exe release-assets/AioMM.exe
           cd release-assets
-          powershell -NoProfile -Command "Compress-Archive -Path 'AIOMM.exe' -DestinationPath 'AIOMM-v${version}-windows-x64.zip' -Force"
+          powershell -NoProfile -Command "Compress-Archive -Path 'AioMM.exe' -DestinationPath 'AioMM-v${version}-windows-x64.zip' -Force"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

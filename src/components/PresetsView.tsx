@@ -866,7 +866,7 @@ export function PresetsView({
         <div className="mb-3">
           <h2 className="text-base font-medium text-ink">Built-in Presets</h2>
           <p className="text-xs text-ink-mute">
-            Included with AIOMM and ready to preview or apply from any mod inspector.
+            Included with AioMM and ready to preview or apply from any mod inspector.
           </p>
         </div>
         <div className="space-y-3">{builtinPresets.map(renderPresetCard)}</div>

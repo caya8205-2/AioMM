@@ -547,12 +547,12 @@ export function Sidebar(props: SidebarProps): JSX.Element {
         <div className="flex shrink-0 items-center gap-2">
           <img
             src="/icon.png"
-            alt="AIOMM"
+            alt="AioMM"
             className="h-7 w-7 shrink-0 rounded-md border border-hairline object-cover shadow-xs"
           />
           <div className="flex flex-col">
             <span className="text-[15px] font-semibold tracking-tight text-ink">
-              AIOMM
+              AioMM
             </span>
             <span className="text-[9px] font-normal tracking-wide text-ink-mute">
               All in one mod manager

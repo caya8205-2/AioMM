@@ -1,7 +1,7 @@
 [package]
 name = "aiomm"
 version = "0.1.0"
-description = "All in one mod manager (AIOMM) for 3DMigoto and XXMI"
+description = "All in one mod manager (AioMM) for 3DMigoto and XXMI"
 authors = ["Caya8205"]
 edition = "2021"
 

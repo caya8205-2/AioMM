@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "All in one mod manager",
+  "productName": "AioMM",
   "version": "0.1.0",
   "identifier": "dev.caya.aiomm",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "All in one mod manager (AIOMM)",
+        "title": "All in one mod manager (AioMM)",
         "width": 1180,
         "height": 760,
         "minWidth": 360,
@@ -35,8 +35,8 @@
     "active": true,
     "publisher": "Caya8205",
     "copyright": "Copyright © 2026 Caya8205",
-    "shortDescription": "All in one mod manager",
-    "longDescription": "All in one mod manager (AIOMM) for 3DMigoto and XXMI",
+    "shortDescription": "All in one mod manager (AioMM)",
+    "longDescription": "All in one mod manager (AioMM) for 3DMigoto and XXMI",
     "targets": "all",
     "icon": [
       "icons/32x32.png",
