@@ -105,7 +105,7 @@ export function ModsView(props: ModsViewProps): JSX.Element {
   const [filter, setFilter] = useState<ModFilter>('all');
   const [sortBy, setSortBy] = useState<ModSort>('name-asc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(15);
+  const [pageSize, setPageSize] = useState(30);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [installingZip, setInstallingZip] = useState(false);
@@ -658,9 +658,9 @@ export function ModsView(props: ModsViewProps): JSX.Element {
                   aria-label="Items per page"
                   className="min-h-[44px] rounded-md border border-hairline bg-surface-elevated px-2 py-1 text-[12px] font-medium text-ink-bright focus:border-hairline-strong sm:min-h-[32px]"
                 >
-                  <option value="15">15</option>
                   <option value="30">30</option>
-                  <option value="50">50</option>
+                  <option value="60">60</option>
+                  <option value="90">90</option>
                 </select>
               </div>
             </div>
