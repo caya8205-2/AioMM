@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4173 --strictPort",
     "tauri:dev": "tauri dev",
-    "tauri:build": "npm run build && cargo clean --manifest-path src-tauri/Cargo.toml -p aiomm && cargo build --release --manifest-path src-tauri/Cargo.toml --features custom-protocol"
+    "tauri:build": "npm run build && cargo clean --manifest-path src-tauri/Cargo.toml -p aiomm && cargo build --release --manifest-path src-tauri/Cargo.toml --features custom-protocol",
+    "version:sync": "node scripts/sync-version.mjs"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.3.5",

@@ -318,13 +318,20 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       >
         <div className="flex shrink-0 flex-col gap-3 border-b border-hairline p-3">
           <div className="flex items-center justify-between gap-2 px-0.5">
-            <div className="flex flex-col">
-              <span className="text-[17px] font-semibold tracking-tight text-ink">
-                AIOMM
-              </span>
-              <span className="text-[10px] font-normal tracking-wide text-ink-mute">
-                All in one mod manager
-              </span>
+            <div className="flex items-center gap-2.5">
+              <img
+                src="/icon.png"
+                alt="AIOMM"
+                className="h-8 w-8 shrink-0 rounded-md border border-hairline object-cover shadow-xs"
+              />
+              <div className="flex flex-col">
+                <span className="text-[16px] font-semibold tracking-tight text-ink">
+                  AIOMM
+                </span>
+                <span className="text-[10px] font-normal tracking-wide text-ink-mute">
+                  All in one mod manager
+                </span>
+              </div>
             </div>
             {isPreviewMode && (
               <span className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 text-[11px] font-medium text-ink-mute">
@@ -403,8 +410,13 @@ export function Sidebar(props: SidebarProps): JSX.Element {
 
       <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-hairline bg-surface px-3 sm:hidden">
         <div className="flex shrink-0 items-center gap-2">
+          <img
+            src="/icon.png"
+            alt="AIOMM"
+            className="h-7 w-7 shrink-0 rounded-md border border-hairline object-cover shadow-xs"
+          />
           <div className="flex flex-col">
-            <span className="text-[16px] font-semibold tracking-tight text-ink">
+            <span className="text-[15px] font-semibold tracking-tight text-ink">
               AIOMM
             </span>
             <span className="text-[9px] font-normal tracking-wide text-ink-mute">
