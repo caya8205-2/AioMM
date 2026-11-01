@@ -24,6 +24,14 @@ interface ActiveBindingRow {
   keybind: KeyBind;
 }
 
+type KeybindFilter = 'all' | 'conflicts' | 'combos' | 'single';
+type KeybindSort =
+  | 'key-asc'
+  | 'key-desc'
+  | 'mod-asc'
+  | 'section-asc'
+  | 'conflicts-first';
+
 function cleanSectionName(section: string): string {
   const stripped = section.replace(/^key[\s_-]*/i, '').trim();
   return stripped.length > 0 ? stripped : section;
@@ -38,6 +46,8 @@ export function KeybindsView({
   onNotify,
 }: KeybindsViewProps) {
   const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<KeybindFilter>('all');
+  const [sortBy, setSortBy] = useState<KeybindSort>('key-asc');
   const [captureTarget, setCaptureTarget] = useState<ActiveBindingRow | null>(null);
   const [draftKey, setDraftKey] = useState('');
   const [showRawInput, setShowRawInput] = useState(false);
@@ -73,10 +83,40 @@ export function KeybindsView({
     [conflicts],
   );
 
+  const counts = useMemo(() => {
+    let conflictsCount = 0;
+    let combosCount = 0;
+    let singleCount = 0;
+    for (const { mod, keybind } of activeBindings) {
+      if (conflictPairSet.has(`${mod.id}::${keybind.normalizedKey}`)) {
+        conflictsCount++;
+      }
+      if (formatKeyTokens(keybind.rawKey).length > 1) {
+        combosCount++;
+      } else {
+        singleCount++;
+      }
+    }
+    return {
+      all: activeBindings.length,
+      conflicts: conflictsCount,
+      combos: combosCount,
+      single: singleCount,
+    };
+  }, [activeBindings, conflictPairSet]);
+
   const filteredBindings = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return activeBindings;
-    return activeBindings.filter(({ mod, keybind }) => {
+    const result = activeBindings.filter(({ mod, keybind }) => {
+      const isConflict = conflictPairSet.has(`${mod.id}::${keybind.normalizedKey}`);
+      const tokensCount = formatKeyTokens(keybind.rawKey).length;
+
+      if (filter === 'conflicts' && !isConflict) return false;
+      if (filter === 'combos' && tokensCount <= 1) return false;
+      if (filter === 'single' && tokensCount > 1) return false;
+
+      if (!q) return true;
+
       const tokens = formatKeyTokens(keybind.rawKey).join(' ').toLowerCase();
       return (
         mod.displayName.toLowerCase().includes(q) ||
@@ -90,7 +130,47 @@ export function KeybindsView({
         keybind.iniRelName.toLowerCase().includes(q)
       );
     });
-  }, [activeBindings, query]);
+
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case 'key-asc':
+          return (
+            a.keybind.normalizedKey.localeCompare(b.keybind.normalizedKey) ||
+            a.mod.displayName.localeCompare(b.mod.displayName)
+          );
+        case 'key-desc':
+          return (
+            b.keybind.normalizedKey.localeCompare(a.keybind.normalizedKey) ||
+            a.mod.displayName.localeCompare(b.mod.displayName)
+          );
+        case 'mod-asc':
+          return (
+            a.mod.displayName.localeCompare(b.mod.displayName) ||
+            a.keybind.normalizedKey.localeCompare(b.keybind.normalizedKey)
+          );
+        case 'section-asc':
+          return (
+            cleanSectionName(a.keybind.section).localeCompare(
+              cleanSectionName(b.keybind.section),
+            ) || a.mod.displayName.localeCompare(b.mod.displayName)
+          );
+        case 'conflicts-first': {
+          const aConflict = conflictPairSet.has(
+            `${a.mod.id}::${a.keybind.normalizedKey}`,
+          );
+          const bConflict = conflictPairSet.has(
+            `${b.mod.id}::${b.keybind.normalizedKey}`,
+          );
+          if (aConflict !== bConflict) return aConflict ? -1 : 1;
+          return a.keybind.normalizedKey.localeCompare(b.keybind.normalizedKey);
+        }
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [activeBindings, query, filter, sortBy, conflictPairSet]);
 
   const collidingSameModSections = useMemo(() => {
     if (!captureTarget) return [];
@@ -368,6 +448,72 @@ export function KeybindsView({
                 <Icon icon={Icons.close} size={14} />
               </button>
             )}
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5">
+          <div
+            role="tablist"
+            aria-label="Filter hotkeys"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            {[
+              { id: 'all' as const, label: 'All', count: counts.all },
+              ...(counts.conflicts > 0
+                ? [
+                    {
+                      id: 'conflicts' as const,
+                      label: 'Conflicts',
+                      count: counts.conflicts,
+                    },
+                  ]
+                : []),
+              { id: 'single' as const, label: 'Single Key', count: counts.single },
+              { id: 'combos' as const, label: 'Combos', count: counts.combos },
+            ].map((tab) => {
+              const isActive = filter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setFilter(tab.id)}
+                  className={clsx(
+                    'inline-flex min-h-[44px] items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-medium transition-colors sm:min-h-[32px]',
+                    isActive
+                      ? 'border-hairline-strong bg-surface-elevated text-ink-bright'
+                      : 'border-transparent bg-transparent text-ink-body hover:bg-surface-elevated/60 hover:text-ink-bright',
+                  )}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    className={clsx(
+                      'text-[11px] tabular-nums',
+                      isActive ? 'text-ink-charcoal' : 'text-ink-mute',
+                    )}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-[12px] text-ink-mute">Sort:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as KeybindSort)}
+              aria-label="Sort hotkeys"
+              className="min-h-[44px] rounded-md border border-hairline bg-surface-elevated px-2 py-1 text-[12px] font-medium text-ink-bright focus:border-hairline-strong sm:min-h-[32px]"
+            >
+              <option value="key-asc">Hotkey (A to Z)</option>
+              <option value="key-desc">Hotkey (Z to A)</option>
+              <option value="mod-asc">Mod Name</option>
+              <option value="section-asc">Toggle Section</option>
+              <option value="conflicts-first">Conflicts First</option>
+            </select>
           </div>
         </div>
 

@@ -146,13 +146,14 @@ export function PresetsView({
   const [sectionPrefix, setSectionPrefix] = useState('TextureOverride');
   const [componentFilter, setComponentFilter] = useState<ComponentFilterChoice>('3plus');
 
-  const [afterInject, setAfterInject] = useState('');
-  const [afterAnchor, setAfterAnchor] = useState(DEFAULT_AFTER_ANCHOR);
-  const [showCustomAfterAnchor, setShowCustomAfterAnchor] = useState(false);
+  const [rule1Position, setRule1Position] = useState<'after' | 'before'>('after');
+  const [rule1Anchor, setRule1Anchor] = useState('handling = skip');
+  const [rule1Inject, setRule1Inject] = useState('');
 
-  const [beforeInject, setBeforeInject] = useState('');
-  const [beforeAnchor, setBeforeAnchor] = useState(DEFAULT_BEFORE_ANCHOR);
-  const [showCustomBeforeAnchor, setShowCustomBeforeAnchor] = useState(false);
+  const [hasSecondRule, setHasSecondRule] = useState(false);
+  const [rule2Position, setRule2Position] = useState<'after' | 'before'>('before');
+  const [rule2Anchor, setRule2Anchor] = useState('run = CommandListCleanupSharedResources');
+  const [rule2Inject, setRule2Inject] = useState('');
 
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -176,13 +177,47 @@ export function PresetsView({
     setDescription('');
     setSectionPrefix('TextureOverride');
     setComponentFilter('3plus');
-    setAfterInject('');
-    setAfterAnchor(DEFAULT_AFTER_ANCHOR);
-    setShowCustomAfterAnchor(false);
-    setBeforeInject('');
-    setBeforeAnchor(DEFAULT_BEFORE_ANCHOR);
-    setShowCustomBeforeAnchor(false);
+    setRule1Position('after');
+    setRule1Anchor('handling = skip');
+    setRule1Inject('');
+    setHasSecondRule(false);
+    setRule2Position('before');
+    setRule2Anchor('run = CommandListCleanupSharedResources');
+    setRule2Inject('');
     setFormError(null);
+  }
+
+  function applyPresetTemplate(type: 'post-skip' | 'shared-wrapper' | 'blank') {
+    if (type === 'post-skip') {
+      setName('Custom Runner Hook');
+      setGroup('Pipeline Hooks');
+      setDescription('Injects command runner after skip handling.');
+      setRule1Position('after');
+      setRule1Anchor('handling = skip');
+      setRule1Inject('run = CommandList\\MyShader\\Run');
+      setHasSecondRule(false);
+      setRule2Inject('');
+    } else if (type === 'shared-wrapper') {
+      setName('Shared Resource Hook');
+      setGroup('Resource Shaders');
+      setDescription('Injects custom shader after shared resources and clears before cleanup.');
+      setRule1Position('after');
+      setRule1Anchor('run = CommandListOverrideSharedResources');
+      setRule1Inject('run = CommandList\\MyShader\\Apply');
+      setHasSecondRule(true);
+      setRule2Position('before');
+      setRule2Anchor('run = CommandListCleanupSharedResources');
+      setRule2Inject('run = CommandList\\MyShader\\Clear');
+    } else {
+      setName('');
+      setGroup('');
+      setDescription('');
+      setRule1Position('after');
+      setRule1Anchor('handling = skip');
+      setRule1Inject('');
+      setHasSecondRule(false);
+      setRule2Inject('');
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -198,26 +233,36 @@ export function PresetsView({
     const insertAfter: AnchorInsert[] = [];
     const insertBefore: AnchorInsert[] = [];
 
-    if (afterInject.trim()) {
-      const anchor = afterAnchor.trim();
-      if (!anchor) {
-        setFormError('Anchor line for the insert-after rule cannot be empty.');
+    const r1AnchorTrim = rule1Anchor.trim();
+    const r1InjectTrim = rule1Inject.trim();
+    if (r1InjectTrim) {
+      if (!r1AnchorTrim) {
+        setFormError('Anchor line for Rule 1 cannot be empty.');
         return;
       }
-      insertAfter.push({ anchor, inject: afterInject.trim() });
+      if (rule1Position === 'after') {
+        insertAfter.push({ anchor: r1AnchorTrim, inject: r1InjectTrim });
+      } else {
+        insertBefore.push({ anchor: r1AnchorTrim, inject: r1InjectTrim });
+      }
     }
 
-    if (beforeInject.trim()) {
-      const anchor = beforeAnchor.trim();
-      if (!anchor) {
-        setFormError('Anchor line for the insert-before rule cannot be empty.');
+    if (hasSecondRule && rule2Inject.trim()) {
+      const r2AnchorTrim = rule2Anchor.trim();
+      const r2InjectTrim = rule2Inject.trim();
+      if (!r2AnchorTrim) {
+        setFormError('Anchor line for Rule 2 cannot be empty.');
         return;
       }
-      insertBefore.push({ anchor, inject: beforeInject.trim() });
+      if (rule2Position === 'after') {
+        insertAfter.push({ anchor: r2AnchorTrim, inject: r2InjectTrim });
+      } else {
+        insertBefore.push({ anchor: r2AnchorTrim, inject: r2InjectTrim });
+      }
     }
 
     if (insertAfter.length === 0 && insertBefore.length === 0) {
-      setFormError('Add at least one line to insert (after override or before cleanup).');
+      setFormError('Add at least one line to inject.');
       return;
     }
 
@@ -328,7 +373,7 @@ export function PresetsView({
 
         {preset.builtin && preset.sourceUrl && (
           <div className="mt-3 rounded-md border border-hairline bg-surface-elevated px-3 py-2 text-xs text-ink-body">
-            Requires the base texture mod in your Mods folder first (not built into XXMI):{' '}
+            Requires the base texture mod in your Mods folder first:{' '}
             <span className="font-mono text-ink-mute">{preset.sourceUrl}</span>
           </div>
         )}
@@ -423,14 +468,40 @@ export function PresetsView({
 
       {root && showForm && (
         <section
-          aria-label="New Effect Preset"
+          aria-label="New Preset"
           className="mt-6 rounded-lg border border-hairline-strong bg-surface p-4 sm:p-6"
         >
-          <div className="border-b border-hairline pb-4">
-            <h2 className="text-base font-medium text-ink">New Effect Preset</h2>
-            <p className="mt-0.5 text-xs text-ink-mute">
-              Saves to <code className="font-mono text-ink-body">modctl.presets.toml</code> in your active Mods folder.
-            </p>
+          <div className="flex flex-col gap-2 border-b border-hairline pb-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-medium text-ink">New Preset</h2>
+              <p className="mt-0.5 text-xs text-ink-mute">
+                Saves to <code className="font-mono text-ink-body">modctl.presets.toml</code> in your active Mods folder.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-ink-mute">Templates:</span>
+              <button
+                type="button"
+                onClick={() => applyPresetTemplate('post-skip')}
+                className="rounded-xs border border-hairline bg-surface-elevated px-2 py-1 font-mono text-[11px] text-ink-body hover:bg-surface-card hover:text-ink-bright"
+              >
+                Post-Skip Runner
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPresetTemplate('shared-wrapper')}
+                className="rounded-xs border border-hairline bg-surface-elevated px-2 py-1 font-mono text-[11px] text-ink-body hover:bg-surface-card hover:text-ink-bright"
+              >
+                Shared Resources Hook
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPresetTemplate('blank')}
+                className="rounded-xs border border-hairline bg-surface-elevated px-2 py-1 font-mono text-[11px] text-ink-mute hover:text-ink-bright"
+              >
+                Blank
+              </button>
+            </div>
           </div>
 
           <form onSubmit={(e) => void handleSubmit(e)} className="mt-5 space-y-4">
@@ -450,7 +521,7 @@ export function PresetsView({
                     setName(e.target.value);
                     setFormError(null);
                   }}
-                  placeholder="KatFXMatcap Custom"
+                  placeholder="Custom Lighting Fix"
                   className="mt-1.5 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 text-sm text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
                 />
               </div>
@@ -467,7 +538,7 @@ export function PresetsView({
                   type="text"
                   value={group}
                   onChange={(e) => setGroup(e.target.value)}
-                  placeholder="KatFXMatcap OilSkin"
+                  placeholder="Shaders"
                   className="mt-1.5 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 text-sm text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
                 />
               </div>
@@ -486,7 +557,7 @@ export function PresetsView({
                   type="text"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Applies custom matcap call to character body components."
+                  placeholder="Injects custom shader call into matching mesh sections."
                   className="mt-1.5 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 text-sm text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
                 />
               </div>
@@ -569,115 +640,194 @@ export function PresetsView({
               </div>
             </div>
 
+            {/* Injection Rule 1 */}
             <div className="rounded-md border border-hairline bg-canvas p-3.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label
-                  htmlFor="preset-after-inject"
-                  className="text-xs font-medium text-ink-body"
-                >
-                  Line to insert after{' '}
-                  <code className="font-mono text-ink-bright">
-                    CommandListOverrideSharedResources
-                  </code>{' '}
-                  <span className="font-normal text-ink-mute">(optional)</span>
-                </label>
-                <button
-                  type="button"
-                  aria-expanded={showCustomAfterAnchor}
-                  onClick={() => setShowCustomAfterAnchor((v) => !v)}
-                  className="inline-flex min-h-[44px] sm:min-h-[28px] items-center gap-1 text-xs text-ink-mute hover:text-ink-bright"
-                >
-                  <Icon
-                    icon={showCustomAfterAnchor ? Icons.chevronDown : Icons.chevronRight}
-                    size={13}
-                  />
-                  Custom anchor
-                </button>
-              </div>
-              <input
-                id="preset-after-inject"
-                type="text"
-                value={afterInject}
-                onChange={(e) => {
-                  setAfterInject(e.target.value);
-                  setFormError(null);
-                }}
-                placeholder="run = CommandList\KatFXMatcap\OilSkin"
-                className="mt-1.5 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 font-mono text-xs text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
-              />
-              {showCustomAfterAnchor && (
-                <div className="mt-2.5">
-                  <label
-                    htmlFor="preset-after-anchor"
-                    className="block text-xs text-ink-mute"
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-2.5">
+                <span className="text-xs font-medium text-ink">Injection Rule 1</span>
+                <div className="flex items-center gap-1 rounded-sm border border-hairline bg-surface-elevated p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setRule1Position('after')}
+                    className={clsx(
+                      'rounded-xs px-2 py-0.5 text-xs font-medium transition-colors',
+                      rule1Position === 'after'
+                        ? 'bg-surface-card text-ink-bright'
+                        : 'text-ink-mute hover:text-ink-body',
+                    )}
                   >
-                    Match anchor line (case-insensitive)
+                    Insert After
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRule1Position('before')}
+                    className={clsx(
+                      'rounded-xs px-2 py-0.5 text-xs font-medium transition-colors',
+                      rule1Position === 'before'
+                        ? 'bg-surface-card text-ink-bright'
+                        : 'text-ink-mute hover:text-ink-body',
+                    )}
+                  >
+                    Insert Before
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label htmlFor="preset-rule1-anchor" className="block text-xs font-medium text-ink-body">
+                    Anchor Line in Section
                   </label>
                   <input
-                    id="preset-after-anchor"
+                    id="preset-rule1-anchor"
                     type="text"
-                    value={afterAnchor}
-                    onChange={(e) => setAfterAnchor(e.target.value)}
-                    className="mt-1 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 font-mono text-xs text-ink-bright focus:border-hairline-strong"
+                    value={rule1Anchor}
+                    onChange={(e) => setRule1Anchor(e.target.value)}
+                    placeholder="handling = skip"
+                    className="mt-1 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 font-mono text-xs text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
+                  />
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-mute">
+                    <span>Common anchors:</span>
+                    <button
+                      type="button"
+                      onClick={() => setRule1Anchor('handling = skip')}
+                      className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px] text-ink-body hover:text-ink-bright"
+                    >
+                      handling = skip
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRule1Anchor('run = CommandListOverrideSharedResources')}
+                      className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px] text-ink-body hover:text-ink-bright"
+                    >
+                      OverrideSharedResources
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRule1Anchor('drawindexed = auto')}
+                      className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px] text-ink-body hover:text-ink-bright"
+                    >
+                      drawindexed = auto
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="preset-rule1-inject" className="block text-xs font-medium text-ink-body">
+                    Line to Inject
+                  </label>
+                  <input
+                    id="preset-rule1-inject"
+                    type="text"
+                    value={rule1Inject}
+                    onChange={(e) => {
+                      setRule1Inject(e.target.value);
+                      setFormError(null);
+                    }}
+                    placeholder="run = CommandList\MyShader\Run"
+                    className="mt-1 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 font-mono text-xs text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
                   />
                 </div>
-              )}
+              </div>
             </div>
 
-            <div className="rounded-md border border-hairline bg-canvas p-3.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label
-                  htmlFor="preset-before-inject"
-                  className="text-xs font-medium text-ink-body"
-                >
-                  Line to insert before{' '}
-                  <code className="font-mono text-ink-bright">
-                    CommandListCleanupSharedResources
-                  </code>{' '}
-                  <span className="font-normal text-ink-mute">(optional)</span>
-                </label>
-                <button
-                  type="button"
-                  aria-expanded={showCustomBeforeAnchor}
-                  onClick={() => setShowCustomBeforeAnchor((v) => !v)}
-                  className="inline-flex min-h-[44px] sm:min-h-[28px] items-center gap-1 text-xs text-ink-mute hover:text-ink-bright"
-                >
-                  <Icon
-                    icon={showCustomBeforeAnchor ? Icons.chevronDown : Icons.chevronRight}
-                    size={13}
-                  />
-                  Custom anchor
-                </button>
-              </div>
-              <input
-                id="preset-before-inject"
-                type="text"
-                value={beforeInject}
-                onChange={(e) => {
-                  setBeforeInject(e.target.value);
-                  setFormError(null);
-                }}
-                placeholder="run = CommandList\KatFXMatcap\Clear"
-                className="mt-1.5 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 font-mono text-xs text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
-              />
-              {showCustomBeforeAnchor && (
-                <div className="mt-2.5">
-                  <label
-                    htmlFor="preset-before-anchor"
-                    className="block text-xs text-ink-mute"
-                  >
-                    Match anchor line (case-insensitive)
-                  </label>
-                  <input
-                    id="preset-before-anchor"
-                    type="text"
-                    value={beforeAnchor}
-                    onChange={(e) => setBeforeAnchor(e.target.value)}
-                    className="mt-1 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 font-mono text-xs text-ink-bright focus:border-hairline-strong"
-                  />
+            {/* Optional Second Rule */}
+            {hasSecondRule ? (
+              <div className="rounded-md border border-hairline bg-canvas p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-2.5">
+                  <span className="text-xs font-medium text-ink">Injection Rule 2 (Optional)</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 rounded-sm border border-hairline bg-surface-elevated p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setRule2Position('after')}
+                        className={clsx(
+                          'rounded-xs px-2 py-0.5 text-xs font-medium transition-colors',
+                          rule2Position === 'after'
+                            ? 'bg-surface-card text-ink-bright'
+                            : 'text-ink-mute hover:text-ink-body',
+                        )}
+                      >
+                        Insert After
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRule2Position('before')}
+                        className={clsx(
+                          'rounded-xs px-2 py-0.5 text-xs font-medium transition-colors',
+                          rule2Position === 'before'
+                            ? 'bg-surface-card text-ink-bright'
+                            : 'text-ink-mute hover:text-ink-body',
+                        )}
+                      >
+                        Insert Before
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHasSecondRule(false);
+                        setRule2Inject('');
+                      }}
+                      className="rounded-xs px-2 py-0.5 text-xs text-ink-mute hover:text-status-red"
+                    >
+                      Remove Rule 2
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
+
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label htmlFor="preset-rule2-anchor" className="block text-xs font-medium text-ink-body">
+                      Anchor Line in Section
+                    </label>
+                    <input
+                      id="preset-rule2-anchor"
+                      type="text"
+                      value={rule2Anchor}
+                      onChange={(e) => setRule2Anchor(e.target.value)}
+                      placeholder="run = CommandListCleanupSharedResources"
+                      className="mt-1 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 font-mono text-xs text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
+                    />
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-mute">
+                      <span>Common anchors:</span>
+                      <button
+                        type="button"
+                        onClick={() => setRule2Anchor('run = CommandListCleanupSharedResources')}
+                        className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px] text-ink-body hover:text-ink-bright"
+                      >
+                        CleanupSharedResources
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="preset-rule2-inject" className="block text-xs font-medium text-ink-body">
+                      Line to Inject
+                    </label>
+                    <input
+                      id="preset-rule2-inject"
+                      type="text"
+                      value={rule2Inject}
+                      onChange={(e) => {
+                        setRule2Inject(e.target.value);
+                        setFormError(null);
+                      }}
+                      placeholder="run = CommandList\MyShader\Clear"
+                      className="mt-1 min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-3 font-mono text-xs text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setHasSecondRule(true)}
+                className="inline-flex min-h-[44px] sm:min-h-[36px] items-center gap-1.5 text-xs text-ink-mute hover:text-ink-bright"
+              >
+                <Icon icon={Icons.add} size={14} />
+                <span>Add Second Rule (e.g. cleanup or secondary hook)</span>
+              </button>
+            )}
 
             {formError && (
               <div

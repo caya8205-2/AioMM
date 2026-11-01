@@ -25,7 +25,25 @@ export interface ModsViewProps {
   searchInputRef?: React.RefObject<HTMLInputElement>;
 }
 
-type ModFilter = 'all' | 'active' | 'disabled' | 'patched';
+type ModFilter =
+  | 'all'
+  | 'active'
+  | 'disabled'
+  | 'conflicts'
+  | 'patched'
+  | 'has-backup';
+
+type ModSort = 'name-asc' | 'name-desc' | 'keys-count' | 'status' | 'category';
+
+function modHasInternalConflict(mod: ModEntry): boolean {
+  const seen = new Set<string>();
+  for (const kb of mod.keybinds) {
+    if (!kb.normalizedKey) continue;
+    if (seen.has(kb.normalizedKey)) return true;
+    seen.add(kb.normalizedKey);
+  }
+  return false;
+}
 
 function ModThumbnail({
   previewPath,
@@ -82,31 +100,42 @@ export function ModsView(props: ModsViewProps): JSX.Element {
 
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ModFilter>('all');
+  const [sortBy, setSortBy] = useState<ModSort>('name-asc');
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     let active = 0;
     let disabled = 0;
     let patched = 0;
+    let conflicts = 0;
+    let hasBackup = 0;
     for (const m of mods) {
       if (m.enabled) active++;
       else disabled++;
       if (m.appliedPresetIds.length > 0) patched++;
+      if (modHasInternalConflict(m)) conflicts++;
+      if (m.hasAnyBackup) hasBackup++;
     }
     return {
       all: mods.length,
       active,
       disabled,
       patched,
+      conflicts,
+      hasBackup,
     };
   }, [mods]);
 
   const filteredMods = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return mods.filter((mod) => {
+    const result = mods.filter((mod) => {
       if (filter === 'active' && !mod.enabled) return false;
       if (filter === 'disabled' && mod.enabled) return false;
       if (filter === 'patched' && mod.appliedPresetIds.length === 0)
+        return false;
+      if (filter === 'conflicts' && !modHasInternalConflict(mod))
+        return false;
+      if (filter === 'has-backup' && !mod.hasAnyBackup)
         return false;
 
       if (!q) return true;
@@ -129,7 +158,30 @@ export function ModsView(props: ModsViewProps): JSX.Element {
 
       return false;
     });
-  }, [mods, filter, query]);
+
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case 'name-asc':
+          return a.displayName.localeCompare(b.displayName);
+        case 'name-desc':
+          return b.displayName.localeCompare(a.displayName);
+        case 'keys-count':
+          return b.keybinds.length - a.keybinds.length;
+        case 'status':
+          if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+          return a.displayName.localeCompare(b.displayName);
+        case 'category':
+          return (
+            (a.category || '').localeCompare(b.category || '') ||
+            a.displayName.localeCompare(b.displayName)
+          );
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [mods, filter, query, sortBy]);
 
   const selectedMod = useMemo(
     () => mods.find((m) => m.id === selectedModId) ?? null,
@@ -313,7 +365,13 @@ export function ModsView(props: ModsViewProps): JSX.Element {
     { id: 'all', label: 'All', count: counts.all },
     { id: 'active', label: 'Active', count: counts.active },
     { id: 'disabled', label: 'Disabled', count: counts.disabled },
+    ...(counts.conflicts > 0
+      ? [{ id: 'conflicts' as const, label: 'Conflicts', count: counts.conflicts }]
+      : []),
     { id: 'patched', label: 'Patched', count: counts.patched },
+    ...(counts.hasBackup > 0
+      ? [{ id: 'has-backup' as const, label: 'Has Backup', count: counts.hasBackup }]
+      : []),
   ];
 
   return (
@@ -365,39 +423,57 @@ export function ModsView(props: ModsViewProps): JSX.Element {
             )}
           </div>
 
-          <div
-            role="tablist"
-            aria-label="Filter mods"
-            className="flex flex-wrap items-center gap-1.5"
-          >
-            {filterTabs.map((tab) => {
-              const isActive = filter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => setFilter(tab.id)}
-                  className={clsx(
-                    'inline-flex min-h-[44px] items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-medium transition-colors sm:min-h-[32px]',
-                    isActive
-                      ? 'border-hairline-strong bg-surface-elevated text-ink-bright'
-                      : 'border-transparent bg-transparent text-ink-body hover:bg-surface-elevated/60 hover:text-ink-bright',
-                  )}
-                >
-                  <span>{tab.label}</span>
-                  <span
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div
+              role="tablist"
+              aria-label="Filter mods"
+              className="flex flex-wrap items-center gap-1.5"
+            >
+              {filterTabs.map((tab) => {
+                const isActive = filter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setFilter(tab.id)}
                     className={clsx(
-                      'text-[11px] tabular-nums',
-                      isActive ? 'text-ink-charcoal' : 'text-ink-mute',
+                      'inline-flex min-h-[44px] items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-medium transition-colors sm:min-h-[32px]',
+                      isActive
+                        ? 'border-hairline-strong bg-surface-elevated text-ink-bright'
+                        : 'border-transparent bg-transparent text-ink-body hover:bg-surface-elevated/60 hover:text-ink-bright',
                     )}
                   >
-                    {tab.count}
-                  </span>
-                </button>
-              );
-            })}
+                    <span>{tab.label}</span>
+                    <span
+                      className={clsx(
+                        'text-[11px] tabular-nums',
+                        isActive ? 'text-ink-charcoal' : 'text-ink-mute',
+                      )}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[12px] text-ink-mute">Sort:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as ModSort)}
+                aria-label="Sort mods"
+                className="min-h-[44px] rounded-md border border-hairline bg-surface-elevated px-2 py-1 text-[12px] font-medium text-ink-bright focus:border-hairline-strong sm:min-h-[32px]"
+              >
+                <option value="name-asc">Name (A to Z)</option>
+                <option value="name-desc">Name (Z to A)</option>
+                <option value="status">Status (Active first)</option>
+                <option value="keys-count">Most Hotkeys</option>
+                <option value="category">Character / Category</option>
+              </select>
+            </div>
           </div>
         </div>
 
