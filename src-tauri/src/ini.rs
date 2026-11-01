@@ -39,7 +39,13 @@ pub struct PatchReport {
     pub patched_content: String,
 }
 
-pub fn modctl_backup_path(ini_path: &Path) -> PathBuf {
+pub fn aiomm_backup_path(ini_path: &Path) -> PathBuf {
+    let mut os: OsString = ini_path.as_os_str().to_os_string();
+    os.push(".aiomm.bak");
+    PathBuf::from(os)
+}
+
+pub fn modctl_legacy_backup_path(ini_path: &Path) -> PathBuf {
     let mut os: OsString = ini_path.as_os_str().to_os_string();
     os.push(".modctl.bak");
     PathBuf::from(os)
@@ -52,13 +58,16 @@ pub fn legacy_backup_path(ini_path: &Path) -> PathBuf {
 }
 
 pub fn has_backup_file(ini_path: &Path) -> bool {
-    modctl_backup_path(ini_path).is_file() || legacy_backup_path(ini_path).is_file()
+    aiomm_backup_path(ini_path).is_file()
+        || modctl_legacy_backup_path(ini_path).is_file()
+        || legacy_backup_path(ini_path).is_file()
 }
 
 // Preserve original untouched file across sequential passes (such as 3+ followed by 0+).
 pub fn ensure_backup_once(ini_path: &Path) -> Result<(), String> {
-    let bak = modctl_backup_path(ini_path);
-    if !bak.exists() {
+    let bak = aiomm_backup_path(ini_path);
+    let legacy_modctl = modctl_legacy_backup_path(ini_path);
+    if !bak.exists() && !legacy_modctl.exists() {
         fs::copy(ini_path, &bak)
             .map_err(|e| format!("Failed to create backup '{}': {e}", bak.display()))?;
     }
@@ -66,7 +75,16 @@ pub fn ensure_backup_once(ini_path: &Path) -> Result<(), String> {
 }
 
 pub fn restore_backup(ini_path: &Path) -> Result<(), String> {
-    let modctl_bak = modctl_backup_path(ini_path);
+    let aiomm_bak = aiomm_backup_path(ini_path);
+    if aiomm_bak.is_file() {
+        fs::copy(&aiomm_bak, ini_path)
+            .map_err(|e| format!("Failed to restore backup '{}': {e}", aiomm_bak.display()))?;
+        fs::remove_file(&aiomm_bak)
+            .map_err(|e| format!("Failed to clean up backup '{}': {e}", aiomm_bak.display()))?;
+        return Ok(());
+    }
+
+    let modctl_bak = modctl_legacy_backup_path(ini_path);
     if modctl_bak.is_file() {
         fs::copy(&modctl_bak, ini_path)
             .map_err(|e| format!("Failed to restore backup '{}': {e}", modctl_bak.display()))?;
@@ -772,7 +790,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("modctl_ini_{tag}_{nanos}"));
+        let dir = std::env::temp_dir().join(format!("aiomm_ini_{tag}_{nanos}"));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

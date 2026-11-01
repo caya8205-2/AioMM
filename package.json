@@ -1,5 +1,5 @@
 {
-  "name": "modctl",
+  "name": "aiomm",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4173 --strictPort",
     "tauri:dev": "tauri dev",
-    "tauri:build": "npm run build && cargo clean --manifest-path src-tauri/Cargo.toml -p modctl && cargo build --release --manifest-path src-tauri/Cargo.toml --features custom-protocol"
+    "tauri:build": "npm run build && cargo clean --manifest-path src-tauri/Cargo.toml -p aiomm && cargo build --release --manifest-path src-tauri/Cargo.toml --features custom-protocol"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.3.5",

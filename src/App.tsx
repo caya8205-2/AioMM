@@ -13,8 +13,8 @@ import { KeybindsView } from './components/KeybindsView';
 import { PresetsView } from './components/PresetsView';
 import { Icon, Icons } from './components/Icon';
 
-const STORAGE_CURRENT_ROOT = 'modctl:currentRoot';
-const STORAGE_RECENT_ROOTS = 'modctl:recentRoots';
+const STORAGE_CURRENT_ROOT = 'aiomm:currentRoot';
+const STORAGE_RECENT_ROOTS = 'aiomm:recentRoots';
 const MAX_RECENT_ROOTS = 6;
 
 interface StatusToast {
@@ -24,7 +24,9 @@ interface StatusToast {
 
 function readStorageString(key: string): string | null {
   try {
-    const val = localStorage.getItem(key);
+    const val =
+      localStorage.getItem(key) ||
+      localStorage.getItem(key.replace('aiomm:', 'modctl:'));
     return val && val.trim() ? val.trim() : null;
   } catch {
     return null;
@@ -33,7 +35,9 @@ function readStorageString(key: string): string | null {
 
 function readRecentRoots(): string[] {
   try {
-    const raw = localStorage.getItem(STORAGE_RECENT_ROOTS);
+    const raw =
+      localStorage.getItem(STORAGE_RECENT_ROOTS) ||
+      localStorage.getItem('modctl:recentRoots');
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];

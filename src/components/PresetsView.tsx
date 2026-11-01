@@ -462,7 +462,7 @@ export function PresetsView({
       {!root && (
         <div className="mt-6 rounded-lg border border-hairline bg-surface p-4 text-sm text-ink-body">
           Custom presets are saved inside your Mods directory as{' '}
-          <code className="font-mono text-xs text-ink-bright">modctl.presets.toml</code>. Choose a Mods folder first to load existing custom presets or create new ones.
+          <code className="font-mono text-xs text-ink-bright">aiomm.presets.toml</code>. Choose a Mods folder first to load existing custom presets or create new ones.
         </div>
       )}
 
@@ -475,7 +475,7 @@ export function PresetsView({
             <div>
               <h2 className="text-base font-medium text-ink">New Preset</h2>
               <p className="mt-0.5 text-xs text-ink-mute">
-                Saves to <code className="font-mono text-ink-body">modctl.presets.toml</code> in your active Mods folder.
+                Saves to <code className="font-mono text-ink-body">aiomm.presets.toml</code> in your active Mods folder.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -866,7 +866,7 @@ export function PresetsView({
         <div className="mb-3">
           <h2 className="text-base font-medium text-ink">Built-in Presets</h2>
           <p className="text-xs text-ink-mute">
-            Included with modctl and ready to preview or apply from any mod inspector.
+            Included with AIOMM and ready to preview or apply from any mod inspector.
           </p>
         </div>
         <div className="space-y-3">{builtinPresets.map(renderPresetCard)}</div>
@@ -875,7 +875,7 @@ export function PresetsView({
       <section className="mt-8" aria-label="Custom Presets">
         <div className="mb-3">
           <h2 className="text-base font-medium text-ink">
-            Custom Presets (<code className="font-mono text-sm">modctl.presets.toml</code>)
+            Custom Presets (<code className="font-mono text-sm">aiomm.presets.toml</code>)
           </h2>
           <p className="text-xs text-ink-mute">
             Stored per Mods folder so your custom rules stay portable with your mod setup.
@@ -890,8 +890,8 @@ export function PresetsView({
             <p className="mt-3 text-sm font-medium text-ink">No custom presets saved</p>
             <p className="mt-1 max-w-sm text-xs text-ink-mute">
               {root
-                ? 'Create a preset above to save your own shader or CommandList injection rules into modctl.presets.toml.'
-                : 'Select a Mods folder to view or add custom presets in modctl.presets.toml.'}
+                ? 'Create a preset above to save your own shader or CommandList injection rules into aiomm.presets.toml.'
+                : 'Select a Mods folder to view or add custom presets in aiomm.presets.toml.'}
             </p>
           </div>
         ) : (

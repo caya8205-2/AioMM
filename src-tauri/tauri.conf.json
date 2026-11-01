@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "modctl",
+  "productName": "All in one mod manager",
   "version": "0.1.0",
-  "identifier": "dev.caya.modctl",
+  "identifier": "dev.caya.aiomm",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "modctl",
+        "title": "All in one mod manager (AIOMM)",
         "width": 1180,
         "height": 760,
         "minWidth": 360,

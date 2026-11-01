@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-pub const CUSTOM_PRESETS_FILENAME: &str = "modctl.presets.toml";
+pub const CUSTOM_PRESETS_FILENAME: &str = "aiomm.presets.toml";
+pub const LEGACY_PRESETS_FILENAME: &str = "modctl.presets.toml";
 const DEFAULT_PRESETS_TOML: &str = include_str!("../presets.default.toml");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -58,9 +59,14 @@ pub fn builtin_presets() -> Vec<Preset> {
 }
 
 fn read_custom_presets(mods_root: &Path) -> Result<Vec<Preset>, String> {
-    let file_path = mods_root.join(CUSTOM_PRESETS_FILENAME);
+    let mut file_path = mods_root.join(CUSTOM_PRESETS_FILENAME);
     if !file_path.exists() {
-        return Ok(Vec::new());
+        let legacy = mods_root.join(LEGACY_PRESETS_FILENAME);
+        if legacy.exists() {
+            file_path = legacy;
+        } else {
+            return Ok(Vec::new());
+        }
     }
     let raw = fs::read_to_string(&file_path)
         .map_err(|e| format!("Failed to read {}: {e}", file_path.display()))?;
@@ -190,17 +196,19 @@ pub fn delete_custom_preset(mods_root: &Path, preset_id: &str) -> Result<Vec<Pre
     }
 
     let file_path = mods_root.join(CUSTOM_PRESETS_FILENAME);
-    if file_path.exists() {
+    let legacy_path = mods_root.join(LEGACY_PRESETS_FILENAME);
+    if file_path.exists() || legacy_path.exists() {
         let mut custom = read_custom_presets(mods_root)?;
         custom.retain(|p| p.id != preset_id);
         if custom.is_empty() {
-            fs::remove_file(&file_path)
-                .map_err(|e| format!("Failed to remove {}: {e}", file_path.display()))?;
+            let _ = fs::remove_file(&file_path);
+            let _ = fs::remove_file(&legacy_path);
         } else {
             let serialized = toml::to_string_pretty(&PresetFile { presets: custom })
                 .map_err(|e| format!("Failed to serialize custom presets: {e}"))?;
             fs::write(&file_path, serialized)
                 .map_err(|e| format!("Failed to write {}: {e}", file_path.display()))?;
+            let _ = fs::remove_file(&legacy_path);
         }
     }
 
@@ -217,7 +225,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("modctl_preset_{tag}_{nanos}"));
+        let dir = std::env::temp_dir().join(format!("aiomm_preset_{tag}_{nanos}"));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

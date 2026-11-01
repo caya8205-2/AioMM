@@ -662,7 +662,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("modctl_scan_{tag}_{nanos}"));
+        let dir = std::env::temp_dir().join(format!("aiomm_scan_{tag}_{nanos}"));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

@@ -165,7 +165,7 @@ pub fn run() {
             batch_toggle_mods,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running modctl tauri application");
+        .expect("error while running AIOMM tauri application");
 }
 
 #[cfg(test)]
@@ -181,7 +181,7 @@ mod integration_tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("modctl_ipc_{tag}_{nanos}"));
+        let dir = std::env::temp_dir().join(format!("aiomm_ipc_{tag}_{nanos}"));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

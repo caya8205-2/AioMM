@@ -231,8 +231,8 @@ pub fn package_mod_zip(
             return Err("PowerShell failed to create zip archive.".into());
         }
     } else {
-        // Create clean temp archive omitting .modctl.bak files
-        let temp_dir = std::env::temp_dir().join(format!("modctl_pkg_{clean_mod_name}"));
+        // Create clean temp archive omitting backup files
+        let temp_dir = std::env::temp_dir().join(format!("aiomm_pkg_{clean_mod_name}"));
         if temp_dir.exists() {
             let _ = fs::remove_dir_all(&temp_dir);
         }
@@ -310,7 +310,7 @@ pub fn install_mod_from_zip(zip_path: &Path, mods_root: &Path) -> Result<String,
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let temp_extract = std::env::temp_dir().join(format!("modctl_unpack_{zip_stem}_{millis}"));
+    let temp_extract = std::env::temp_dir().join(format!("aiomm_unpack_{zip_stem}_{millis}"));
     if temp_extract.exists() {
         let _ = fs::remove_dir_all(&temp_extract);
     }
@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn detects_unused_assets_and_deletes_them() {
-        let temp_dir = std::env::temp_dir().join("modctl_test_cleaner");
+        let temp_dir = std::env::temp_dir().join("aiomm_test_cleaner");
         if temp_dir.exists() {
             let _ = fs::remove_dir_all(&temp_dir);
         }
@@ -443,14 +443,14 @@ mod tests {
 
     #[test]
     fn packages_mod_into_zip() {
-        let temp_dir = std::env::temp_dir().join("modctl_test_packager");
+        let temp_dir = std::env::temp_dir().join("aiomm_test_packager");
         if temp_dir.exists() {
             let _ = fs::remove_dir_all(&temp_dir);
         }
         let mod_dir = temp_dir.join("MyCharacterMod");
         fs::create_dir_all(&mod_dir).unwrap();
         fs::write(mod_dir.join("mod.ini"), "[TextureOverride]").unwrap();
-        fs::write(mod_dir.join("mod.ini.modctl.bak"), "[Original]").unwrap();
+        fs::write(mod_dir.join("mod.ini.aiomm.bak"), "[Original]").unwrap();
 
         let zip_path = package_mod_zip(&mod_dir, Some(&temp_dir), false).unwrap();
         assert!(Path::new(&zip_path).exists());
