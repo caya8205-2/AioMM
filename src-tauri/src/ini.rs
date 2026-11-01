@@ -1,5 +1,6 @@
 use crate::preset::Preset;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -492,6 +493,274 @@ pub fn update_keybind_in_file(
     fs::write(ini_path, out).map_err(|e| format!("Failed to write '{}': {e}", ini_path.display()))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TextureResourceInfo {
+    pub section: String,
+    pub filename: String,
+    pub inferred_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RabbitFxAnalysisDto {
+    pub ini_path: String,
+    pub already_converted: bool,
+    pub target_components: Vec<String>,
+    pub resources: Vec<TextureResourceInfo>,
+    pub suggested_diffuse: Option<String>,
+    pub suggested_lightmap: Option<String>,
+    pub suggested_normalmap: Option<String>,
+    pub suggested_glowmap: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RabbitFxApplyRequest {
+    pub ini_path: String,
+    pub target_components: Vec<String>,
+    pub diffuse_resource: Option<String>,
+    pub lightmap_resource: Option<String>,
+    pub normalmap_resource: Option<String>,
+    pub glowmap_resource: Option<String>,
+}
+
+fn infer_texture_type(section: &str, filename: &str) -> &'static str {
+    let combined = format!("{section} {filename}").to_lowercase();
+    if combined.contains("normal")
+        || combined.contains("_n.")
+        || combined.contains("_n_")
+        || combined.contains("_norm")
+        || combined.contains("bump")
+    {
+        "normalmap"
+    } else if combined.contains("lightmap")
+        || combined.contains("_ilm")
+        || combined.contains("_light")
+        || combined.contains("_lm")
+        || combined.contains("_m.")
+        || combined.contains("_m_")
+        || combined.contains("metal")
+        || combined.contains("specular")
+    {
+        "lightmap"
+    } else if combined.contains("glow")
+        || combined.contains("_glow")
+        || combined.contains("emissive")
+        || combined.contains("emission")
+        || combined.contains("_fx")
+    {
+        "glowmap"
+    } else if combined.contains("diffuse")
+        || combined.contains("_d.")
+        || combined.contains("_d_")
+        || combined.contains("albedo")
+        || combined.contains("basecolor")
+        || combined.contains("color")
+        || combined.contains("_alb")
+        || combined.contains("_c.")
+        || combined.contains("_col")
+    {
+        "diffuse"
+    } else {
+        let fl = filename.to_lowercase();
+        if fl.ends_with(".dds") || fl.ends_with(".png") || fl.ends_with(".webp") {
+            "diffuse"
+        } else {
+            "other"
+        }
+    }
+}
+
+pub fn analyze_rabbitfx_file(ini_path: &Path) -> Result<RabbitFxAnalysisDto, String> {
+    let raw = read_ini_utf8(ini_path)?;
+    let body = raw.strip_prefix('\u{feff}').unwrap_or(&raw);
+    let lines = split_lines_lossless(body);
+
+    let mut resources: Vec<TextureResourceInfo> = Vec::new();
+    let mut target_components: Vec<String> = Vec::new();
+    let mut current_sec = String::new();
+    let mut in_resource = false;
+    let mut in_target_component = false;
+    let mut already_converted = false;
+
+    let body_lower = body.to_lowercase();
+    if body_lower.contains("commandlist\\rabbitfx\\settextures")
+        || body_lower.contains("commandlist/rabbitfx/settextures")
+        || body_lower.contains("resource\\rabbitfx\\diffuse")
+        || body_lower.contains("resource/rabbitfx/diffuse")
+    {
+        already_converted = true;
+    }
+
+    for &(content, _) in &lines {
+        let trimmed = content.trim();
+        if trimmed.is_empty() || trimmed.starts_with(';') {
+            continue;
+        }
+
+        if let Some(sec) = parse_section_header(trimmed) {
+            current_sec = sec.to_string();
+            let sec_lower = sec.to_lowercase();
+            in_resource = sec_lower.starts_with("resource");
+            in_target_component = sec_lower.starts_with("textureoverride");
+            continue;
+        }
+
+        if in_resource {
+            if let Some((lhs, rhs)) = trimmed.split_once('=') {
+                if lhs.trim().eq_ignore_ascii_case("filename") {
+                    let fn_clean = rhs.trim().trim_matches('"');
+                    let inferred = infer_texture_type(&current_sec, fn_clean);
+                    resources.push(TextureResourceInfo {
+                        section: current_sec.clone(),
+                        filename: fn_clean.to_string(),
+                        inferred_type: inferred.to_string(),
+                    });
+                }
+            }
+        }
+
+        if in_target_component && eq_ci(trimmed, "handling = skip") {
+            if !target_components.contains(&current_sec) {
+                target_components.push(current_sec.clone());
+            }
+        }
+    }
+
+    let suggested_diffuse = resources
+        .iter()
+        .find(|r| r.inferred_type == "diffuse")
+        .map(|r| r.section.clone());
+    let suggested_lightmap = resources
+        .iter()
+        .find(|r| r.inferred_type == "lightmap")
+        .map(|r| r.section.clone());
+    let suggested_normalmap = resources
+        .iter()
+        .find(|r| r.inferred_type == "normalmap")
+        .map(|r| r.section.clone());
+    let suggested_glowmap = resources
+        .iter()
+        .find(|r| r.inferred_type == "glowmap")
+        .map(|r| r.section.clone());
+
+    Ok(RabbitFxAnalysisDto {
+        ini_path: ini_path.to_string_lossy().to_string(),
+        already_converted,
+        target_components,
+        resources,
+        suggested_diffuse,
+        suggested_lightmap,
+        suggested_normalmap,
+        suggested_glowmap,
+    })
+}
+
+pub fn apply_rabbitfx_to_file(request: RabbitFxApplyRequest) -> Result<DryRunDto, String> {
+    let ini_path = Path::new(&request.ini_path);
+    let raw = read_ini_utf8(ini_path)?;
+    let (bom, body) = raw
+        .strip_prefix('\u{feff}')
+        .map_or(("", raw.as_str()), |rest| ("\u{feff}", rest));
+    let default_nl = if body.contains("\r\n") { "\r\n" } else { "\n" };
+    let lines = split_lines_lossless(body);
+
+    let target_secs: HashSet<String> = if request.target_components.is_empty() {
+        let analysis = analyze_rabbitfx_file(ini_path)?;
+        analysis.target_components.into_iter().collect()
+    } else {
+        request.target_components.into_iter().collect()
+    };
+
+    let mut out: Vec<(String, String)> = Vec::with_capacity(lines.len() + 32);
+    let mut preview: Vec<String> = Vec::new();
+    let mut current_sec = String::new();
+    let mut in_target = false;
+    let mut injected_lines = 0usize;
+    let mut touched_sections = 0usize;
+
+    for i in 0..lines.len() {
+        let (content, ending) = lines[i];
+        let trimmed = content.trim();
+
+        if let Some(sec) = parse_section_header(trimmed) {
+            current_sec = sec.to_string();
+            in_target = target_secs.contains(sec);
+            push_line(&mut out, content.to_string(), ending, default_nl);
+            continue;
+        }
+
+        if in_target {
+            let trim_lower = trimmed.to_lowercase();
+            // Drop existing RabbitFX lines to prevent double-injection upon re-conversion.
+            if trim_lower.starts_with("run = commandlist\\rabbitfx")
+                || trim_lower.starts_with("run = commandlist/rabbitfx")
+                || trim_lower.starts_with("resource\\rabbitfx\\")
+                || trim_lower.starts_with("resource/rabbitfx/")
+            {
+                continue;
+            }
+
+            if eq_ci(trimmed, "handling = skip") {
+                push_line(&mut out, content.to_string(), ending, default_nl);
+                let indent = leading_indent(content);
+                let inject_ending = if ending.is_empty() { default_nl } else { ending };
+
+                preview.push(format!("[{current_sec}]"));
+                touched_sections += 1;
+
+                let mut to_inject: Vec<String> = vec!["run = CommandList\\RabbitFX\\Run".into()];
+                if let Some(ref d) = request.diffuse_resource {
+                    to_inject.push(format!("Resource\\RabbitFX\\Diffuse = ref {d}"));
+                }
+                if let Some(ref l) = request.lightmap_resource {
+                    to_inject.push(format!("Resource\\RabbitFX\\Lightmap = ref {l}"));
+                }
+                if let Some(ref n) = request.normalmap_resource {
+                    to_inject.push(format!("Resource\\RabbitFX\\Normalmap = ref {n}"));
+                }
+                if let Some(ref g) = request.glowmap_resource {
+                    to_inject.push(format!("Resource\\RabbitFX\\GlowMap = ref {g}"));
+                }
+                to_inject.push("run = CommandList\\RabbitFX\\SetTextures".into());
+
+                for line_text in to_inject {
+                    let formatted = format!("{indent}{line_text}");
+                    preview.push(format!("+ {formatted}"));
+                    push_line(&mut out, formatted, inject_ending, default_nl);
+                    injected_lines += 1;
+                }
+                continue;
+            }
+        }
+
+        push_line(&mut out, content.to_string(), ending, default_nl);
+    }
+
+    ensure_backup_once(ini_path)?;
+
+    let mut patched_content = String::with_capacity(raw.len() + injected_lines * 48);
+    patched_content.push_str(bom);
+    for (c, e) in out {
+        patched_content.push_str(&c);
+        patched_content.push_str(&e);
+    }
+
+    fs::write(ini_path, patched_content)
+        .map_err(|e| format!("Failed to write '{}': {e}", ini_path.display()))?;
+
+    Ok(DryRunDto {
+        preset_id: "rabbitfx-stable-textures".into(),
+        injected_lines,
+        touched_sections,
+        already_applied_lines: 0,
+        matching_sections_total: target_secs.len(),
+        preview,
+        has_backup: true,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -661,6 +930,43 @@ mod tests {
         assert_eq!(r2.injected_lines, 0);
         assert_eq!(r2.already_applied_lines, 2);
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn analyzes_and_applies_rabbitfx_stable_textures() {
+        let dir = temp_dir("rabbitfx");
+        let ini_path = dir.join("mod.ini");
+        let sample = "\u{feff}[TextureOverrideComponent3]\r\nhash = 333\r\n\thandling = skip\r\n\tdrawindexed = 100, 0, 0\r\n\r\n[ResourceDiffuse]\r\nfilename = Textures/Body_Diffuse.dds\r\n\r\n[ResourceLightmap]\r\nfilename = Textures/Body_Lightmap.dds\r\n\r\n[ResourceNormal]\r\nfilename = Textures/Body_Normal.dds\r\n";
+        fs::write(&ini_path, sample).unwrap();
+
+        let analysis = analyze_rabbitfx_file(&ini_path).unwrap();
+        assert!(!analysis.already_converted);
+        assert_eq!(analysis.target_components, vec!["TextureOverrideComponent3"]);
+        assert_eq!(analysis.suggested_diffuse.as_deref(), Some("ResourceDiffuse"));
+        assert_eq!(analysis.suggested_lightmap.as_deref(), Some("ResourceLightmap"));
+        assert_eq!(analysis.suggested_normalmap.as_deref(), Some("ResourceNormal"));
+
+        let res = apply_rabbitfx_to_file(RabbitFxApplyRequest {
+            ini_path: ini_path.to_string_lossy().to_string(),
+            target_components: vec!["TextureOverrideComponent3".into()],
+            diffuse_resource: Some("ResourceDiffuse".into()),
+            lightmap_resource: Some("ResourceLightmap".into()),
+            normalmap_resource: Some("ResourceNormal".into()),
+            glowmap_resource: None,
+        })
+        .unwrap();
+
+        assert_eq!(res.touched_sections, 1);
+        assert_eq!(res.injected_lines, 5);
+        let patched = fs::read_to_string(&ini_path).unwrap();
+        assert!(patched.contains("\thandling = skip\r\n\trun = CommandList\\RabbitFX\\Run\r\n\tResource\\RabbitFX\\Diffuse = ref ResourceDiffuse\r\n\tResource\\RabbitFX\\Lightmap = ref ResourceLightmap\r\n\tResource\\RabbitFX\\Normalmap = ref ResourceNormal\r\n\trun = CommandList\\RabbitFX\\SetTextures\r\n"));
+
+        let analysis_after = analyze_rabbitfx_file(&ini_path).unwrap();
+        assert!(analysis_after.already_converted);
+
+        restore_backup(&ini_path).unwrap();
+        assert_eq!(fs::read_to_string(&ini_path).unwrap(), sample);
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -88,3 +88,29 @@ export interface WorkspaceSnapshot {
   presets: Preset[];
   conflicts: KeyConflict[];
 }
+
+export interface TextureResourceInfo {
+  section: string;
+  filename: string;
+  inferredType: 'diffuse' | 'lightmap' | 'normalmap' | 'glowmap' | 'other';
+}
+
+export interface RabbitFxAnalysisDto {
+  iniPath: string;
+  alreadyConverted: boolean;
+  targetComponents: string[];
+  resources: TextureResourceInfo[];
+  suggestedDiffuse: string | null;
+  suggestedLightmap: string | null;
+  suggestedNormalmap: string | null;
+  suggestedGlowmap: string | null;
+}
+
+export interface RabbitFxApplyRequest {
+  iniPath: string;
+  targetComponents: string[];
+  diffuseResource: string | null;
+  lightmapResource: string | null;
+  normalmapResource: string | null;
+  glowmapResource: string | null;
+}

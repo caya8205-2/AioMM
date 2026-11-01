@@ -64,6 +64,16 @@ fn delete_preset(mods_root: String, preset_id: String) -> Result<Vec<Preset>, St
 }
 
 #[tauri::command]
+fn analyze_rabbitfx(ini_path: String) -> Result<ini::RabbitFxAnalysisDto, String> {
+    ini::analyze_rabbitfx_file(Path::new(&ini_path))
+}
+
+#[tauri::command]
+fn apply_rabbitfx(request: ini::RabbitFxApplyRequest) -> Result<DryRunDto, String> {
+    ini::apply_rabbitfx_to_file(request)
+}
+
+#[tauri::command]
 fn reveal_in_explorer(path: String) -> Result<(), String> {
     // Windows explorer treats forward slashes as switch flags and falls back to Documents.
     let win_path = path.replace('/', "\\");
@@ -110,6 +120,8 @@ pub fn run() {
             update_keybind,
             save_preset,
             delete_preset,
+            analyze_rabbitfx,
+            apply_rabbitfx,
             reveal_in_explorer,
             open_external_url,
         ])
@@ -211,9 +223,9 @@ mod integration_tests {
             },
         )
         .unwrap();
-        assert_eq!(saved_list.len(), 3);
+        assert_eq!(saved_list.len(), 5);
         let after_del = delete_preset(root_str.clone(), "custom-fx".into()).unwrap();
-        assert_eq!(after_del.len(), 2);
+        assert_eq!(after_del.len(), 4);
 
         restore_ini_backup(ini_a_str.clone()).unwrap();
         assert_eq!(fs::read_to_string(&ini_a).unwrap(), ini_a_orig);

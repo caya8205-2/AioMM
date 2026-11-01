@@ -33,3 +33,31 @@ inject = 'run = CommandList\KatFXMatcap\OilSkin'
 [[presets.insert_before]]
 anchor = "run = CommandListCleanupSharedResources"
 inject = 'run = CommandList\KatFXMatcap\Clear'
+
+[[presets]]
+id = "orfix-global"
+name = "ORFix (Reflection and Outline Fix)"
+description = "Injects ORFix to fix broken object reflections and black outlines in 3DMigoto mods."
+group = "ORFix"
+source_url = "https://gamebanana.com/tools/14106"
+recommended = false
+section_prefix = "TextureOverride"
+min_component = 0
+
+[[presets.insert_after]]
+anchor = "run = CommandListOverrideSharedResources"
+inject = 'run = CommandList\global\ORFix\ORFix'
+
+[[presets]]
+id = "rabbitfx-runner"
+name = "RabbitFX Base Runner Hook"
+description = "Injects RabbitFX pipeline runner call right after skip handling."
+group = "RabbitFX"
+source_url = "https://gamebanana.com/mods/527815"
+recommended = false
+section_prefix = "TextureOverride"
+min_component = 0
+
+[[presets.insert_after]]
+anchor = "handling = skip"
+inject = 'run = CommandList\RabbitFX\Run'

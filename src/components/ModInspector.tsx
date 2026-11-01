@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { api, IS_TAURI, resolveModImageUrl } from '../lib/api';
-import type { DryRunDto, IniFileEntry, ModEntry, Preset } from '../types';
+import type {
+  DryRunDto,
+  IniFileEntry,
+  ModEntry,
+  Preset,
+  RabbitFxAnalysisDto,
+} from '../types';
 import { Icon, Icons } from './Icon';
 import { Keycap } from './Keycap';
 
@@ -57,6 +63,13 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
     Record<string, string>
   >({});
   const [justPatched, setJustPatched] = useState(false);
+
+  const [rabbitAnalysis, setRabbitAnalysis] = useState<RabbitFxAnalysisDto | null>(null);
+  const [rabbitLoading, setRabbitLoading] = useState(false);
+  const [diffuseRes, setDiffuseRes] = useState('');
+  const [lightmapRes, setLightmapRes] = useState('');
+  const [normalmapRes, setNormalmapRes] = useState('');
+  const [glowmapRes, setGlowmapRes] = useState('');
 
   useEffect(() => {
     const exists = mod.iniFiles.some((f) => f.relName === selectedRelName);
@@ -157,6 +170,30 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
       cancelled = true;
     };
   }, [mod.id, selectedIni, modsRoot, presets]);
+
+  const loadRabbitFx = useCallback(async () => {
+    if (!selectedIni) {
+      setRabbitAnalysis(null);
+      return;
+    }
+    setRabbitLoading(true);
+    try {
+      const res = await api.analyzeRabbitFx(selectedIni.path);
+      setRabbitAnalysis(res);
+      setDiffuseRes(res.suggestedDiffuse || '');
+      setLightmapRes(res.suggestedLightmap || '');
+      setNormalmapRes(res.suggestedNormalmap || '');
+      setGlowmapRes(res.suggestedGlowmap || '');
+    } catch {
+      setRabbitAnalysis(null);
+    } finally {
+      setRabbitLoading(false);
+    }
+  }, [selectedIni]);
+
+  useEffect(() => {
+    void loadRabbitFx();
+  }, [loadRabbitFx]);
 
   const presetGroups: PresetGroup[] = useMemo(() => {
     const grouped = new Map<string, Preset[]>();
@@ -285,11 +322,42 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
       await api.restoreIniBackup(selectedIni.path);
       await onRefresh();
       await loadPreviews();
+      await loadRabbitFx();
       setJustPatched(false);
       onNotify(`Restored original ${selectedIni.relName}.`);
     } catch (err) {
       onNotify(
         err instanceof Error ? err.message : 'Could not restore original .ini file.',
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleApplyRabbitFx() {
+    if (!selectedIni || !rabbitAnalysis || busyAction) return;
+    setBusyAction('rabbitfx-convert');
+    try {
+      const res = await api.applyRabbitFx({
+        iniPath: selectedIni.path,
+        targetComponents: rabbitAnalysis.targetComponents,
+        diffuseResource: diffuseRes || null,
+        lightmapResource: lightmapRes || null,
+        normalmapResource: normalmapRes || null,
+        glowmapResource: glowmapRes || null,
+      });
+      await onRefresh();
+      await loadPreviews();
+      await loadRabbitFx();
+      setJustPatched(true);
+      onNotify(
+        `Converted to RabbitFX Stable Textures (${res.injectedLines} lines in ${res.touchedSections} sections). Press F10 in-game.`,
+      );
+    } catch (err) {
+      onNotify(
+        err instanceof Error
+          ? err.message
+          : 'Could not convert to RabbitFX Stable Textures.',
       );
     } finally {
       setBusyAction(null);
@@ -495,6 +563,165 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
                   : 'Restore Original File'}
               </span>
             </button>
+          )}
+        </section>
+
+        <section className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[13px] font-medium text-ink-charcoal">
+              RabbitFX Stable Textures
+            </h3>
+            {rabbitAnalysis?.alreadyConverted && (
+              <span className="shrink-0 rounded-xs border border-status-green/30 bg-status-green-soft px-2 py-0.5 text-[11px] font-medium text-status-green">
+                RabbitFX Active
+              </span>
+            )}
+          </div>
+
+          {!selectedIni ? (
+            <div className="rounded-md border border-hairline bg-surface-card p-3.5 text-[13px] text-ink-mute">
+              Select an .ini file above to check texture mapping.
+            </div>
+          ) : rabbitLoading ? (
+            <div className="flex items-center gap-2.5 rounded-md border border-hairline bg-surface-card p-3.5 text-[13px] text-ink-mute">
+              <Icon icon={Icons.refresh} size={16} className="animate-spin" />
+              <span>Analyzing texture resources for RabbitFX...</span>
+            </div>
+          ) : !rabbitAnalysis || rabbitAnalysis.resources.length === 0 ? (
+            <div className="rounded-md border border-hairline bg-surface-card p-3 text-[12px] leading-relaxed text-ink-mute">
+              No [Resource] texture sections found in this config to map.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 rounded-md border border-hairline bg-surface-card p-3.5">
+              <div className="flex flex-col gap-1">
+                <p className="text-[12px] leading-relaxed text-ink-body">
+                  Bypasses breakable vanilla texture hashes by mapping resources directly to RabbitFX slots so custom textures survive game patch updates.
+                </p>
+                {rabbitAnalysis.targetComponents.length > 0 && (
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-mute">
+                    <span>Target components:</span>
+                    {rabbitAnalysis.targetComponents.map((c) => (
+                      <span
+                        key={c}
+                        className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px] text-ink-charcoal"
+                      >
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 rounded-md border border-hairline bg-canvas p-2.5">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-[11px] font-medium text-ink-mute">
+                      Diffuse Texture
+                    </label>
+                    <select
+                      value={diffuseRes}
+                      onChange={(e) => setDiffuseRes(e.target.value)}
+                      className="mt-1 min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-2 py-1 font-mono text-xs text-ink-bright focus:border-hairline-strong"
+                    >
+                      <option value="">(None)</option>
+                      {rabbitAnalysis.resources.map((r) => (
+                        <option key={r.section} value={r.section}>
+                          {r.section} ({r.filename})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-ink-mute">
+                      Lightmap Texture
+                    </label>
+                    <select
+                      value={lightmapRes}
+                      onChange={(e) => setLightmapRes(e.target.value)}
+                      className="mt-1 min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-2 py-1 font-mono text-xs text-ink-bright focus:border-hairline-strong"
+                    >
+                      <option value="">(None)</option>
+                      {rabbitAnalysis.resources.map((r) => (
+                        <option key={r.section} value={r.section}>
+                          {r.section} ({r.filename})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-ink-mute">
+                      Normalmap Texture
+                    </label>
+                    <select
+                      value={normalmapRes}
+                      onChange={(e) => setNormalmapRes(e.target.value)}
+                      className="mt-1 min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-2 py-1 font-mono text-xs text-ink-bright focus:border-hairline-strong"
+                    >
+                      <option value="">(None)</option>
+                      {rabbitAnalysis.resources.map((r) => (
+                        <option key={r.section} value={r.section}>
+                          {r.section} ({r.filename})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-ink-mute">
+                      Glowmap Texture (optional)
+                    </label>
+                    <select
+                      value={glowmapRes}
+                      onChange={(e) => setGlowmapRes(e.target.value)}
+                      className="mt-1 min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated px-2 py-1 font-mono text-xs text-ink-bright focus:border-hairline-strong"
+                    >
+                      <option value="">(None)</option>
+                      {rabbitAnalysis.resources.map((r) => (
+                        <option key={r.section} value={r.section}>
+                          {r.section} ({r.filename})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={
+                    busyAction !== null ||
+                    (!diffuseRes && !normalmapRes && !lightmapRes)
+                  }
+                  onClick={() => void handleApplyRabbitFx()}
+                  className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-hairline-strong bg-surface-elevated px-3 text-[13px] font-medium text-ink-bright transition-colors hover:bg-surface-card disabled:opacity-50 sm:min-h-[36px]"
+                >
+                  <Icon icon={Icons.check} size={14} className="mr-1.5" />
+                  <span>
+                    {busyAction === 'rabbitfx-convert'
+                      ? 'Converting to RabbitFX...'
+                      : rabbitAnalysis.alreadyConverted
+                        ? 'Update RabbitFX Mappings'
+                        : 'Convert to RabbitFX Stable Textures'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void handleOpenExternalUrl(
+                      'https://gamebanana.com/mods/527815',
+                    )
+                  }
+                  className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-hairline bg-surface px-3 text-[12px] font-medium text-ink-body hover:border-hairline-strong hover:text-ink-bright sm:min-h-[36px]"
+                >
+                  <Icon icon={Icons.external} size={13} className="text-ink-mute" />
+                  <span>Get RabbitFX (GameBanana)</span>
+                </button>
+              </div>
+            </div>
           )}
         </section>
 

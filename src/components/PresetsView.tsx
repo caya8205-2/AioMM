@@ -66,6 +66,44 @@ const FALLBACK_BUILTIN_PRESETS: Preset[] = [
     ],
     builtin: true,
   },
+  {
+    id: 'orfix-global',
+    name: 'ORFix (Reflection and Outline Fix)',
+    description:
+      'Injects ORFix to fix broken object reflections and black outlines in 3DMigoto mods.',
+    group: 'ORFix',
+    sourceUrl: 'https://gamebanana.com/tools/14106',
+    recommended: false,
+    sectionPrefix: 'TextureOverride',
+    minComponent: 0,
+    insertAfter: [
+      {
+        anchor: DEFAULT_AFTER_ANCHOR,
+        inject: 'run = CommandList\\global\\ORFix\\ORFix',
+      },
+    ],
+    insertBefore: [],
+    builtin: true,
+  },
+  {
+    id: 'rabbitfx-runner',
+    name: 'RabbitFX Base Runner Hook',
+    description:
+      'Injects RabbitFX pipeline runner call right after skip handling.',
+    group: 'RabbitFX',
+    sourceUrl: 'https://gamebanana.com/mods/527815',
+    recommended: false,
+    sectionPrefix: 'TextureOverride',
+    minComponent: 0,
+    insertAfter: [
+      {
+        anchor: 'handling = skip',
+        inject: 'run = CommandList\\RabbitFX\\Run',
+      },
+    ],
+    insertBefore: [],
+    builtin: true,
+  },
 ];
 
 function formatTargetRule(preset: Preset): string {

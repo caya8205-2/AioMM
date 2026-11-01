@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn loads_embedded_oilskin_builtins() {
         let list = load_presets(None).unwrap();
-        assert_eq!(list.len(), 2);
+        assert_eq!(list.len(), 4);
         assert_eq!(list[0].id, "oilskin-3plus");
         assert!(list[0].builtin);
         assert!(list[0].recommended);
@@ -241,6 +241,8 @@ mod tests {
             Some("https://gamebanana.com/mods/733773")
         );
         assert_eq!(list[1].min_component, Some(0));
+        assert_eq!(list[2].id, "orfix-global");
+        assert_eq!(list[3].id, "rabbitfx-runner");
     }
 
     #[test]
@@ -264,7 +266,7 @@ mod tests {
         };
 
         let after_save = save_custom_preset(&dir, custom_none).unwrap();
-        assert_eq!(after_save.len(), 3);
+        assert_eq!(after_save.len(), 5);
         let saved = after_save.iter().find(|p| p.id == "orfix-any").unwrap();
         assert!(!saved.builtin);
         assert_eq!(saved.min_component, None);
@@ -281,7 +283,7 @@ mod tests {
             ..saved.clone()
         };
         let after_update = save_custom_preset(&dir, updated).unwrap();
-        assert_eq!(after_update.len(), 3);
+        assert_eq!(after_update.len(), 5);
         let reloaded = after_update.iter().find(|p| p.id == "orfix-any").unwrap();
         assert_eq!(reloaded.name, "ORFix Component 1+");
         assert_eq!(reloaded.min_component, Some(1));
@@ -298,7 +300,7 @@ mod tests {
         assert!(delete_custom_preset(&dir, "oilskin-3plus").is_err());
 
         let after_del = delete_custom_preset(&dir, "orfix-any").unwrap();
-        assert_eq!(after_del.len(), 2);
+        assert_eq!(after_del.len(), 4);
         assert!(!dir.join(CUSTOM_PRESETS_FILENAME).exists());
 
         let _ = fs::remove_dir_all(&dir);

@@ -5,6 +5,8 @@ import type {
   KeyConflict,
   ModEntry,
   Preset,
+  RabbitFxAnalysisDto,
+  RabbitFxApplyRequest,
   WorkspaceSnapshot,
 } from '../types';
 import { normalizeKeyComboClient } from './keymap';
@@ -89,6 +91,42 @@ const PREVIEW_PRESETS_INIT: Preset[] = [
         inject: 'run = CommandList\\KatFXMatcap\\Clear',
       },
     ],
+    builtin: true,
+  },
+  {
+    id: 'orfix-global',
+    name: 'ORFix (Reflection and Outline Fix)',
+    description: 'Injects ORFix to fix broken object reflections and black outlines in 3DMigoto mods.',
+    group: 'ORFix',
+    sourceUrl: 'https://gamebanana.com/tools/14106',
+    recommended: false,
+    sectionPrefix: 'TextureOverride',
+    minComponent: 0,
+    insertAfter: [
+      {
+        anchor: 'run = CommandListOverrideSharedResources',
+        inject: 'run = CommandList\\global\\ORFix\\ORFix',
+      },
+    ],
+    insertBefore: [],
+    builtin: true,
+  },
+  {
+    id: 'rabbitfx-runner',
+    name: 'RabbitFX Base Runner Hook',
+    description: 'Injects RabbitFX pipeline runner call right after skip handling.',
+    group: 'RabbitFX',
+    sourceUrl: 'https://gamebanana.com/mods/527815',
+    recommended: false,
+    sectionPrefix: 'TextureOverride',
+    minComponent: 0,
+    insertAfter: [
+      {
+        anchor: 'handling = skip',
+        inject: 'run = CommandList\\RabbitFX\\Run',
+      },
+    ],
+    insertBefore: [],
     builtin: true,
   },
 ];
@@ -469,6 +507,73 @@ export const api = {
       return previewPresets;
     }
     return invoke<Preset[]>('delete_preset', { modsRoot, presetId });
+  },
+
+  async analyzeRabbitFx(iniPath: string): Promise<RabbitFxAnalysisDto> {
+    if (!IS_TAURI) {
+      const st = previewInis[iniPath];
+      const cur = st?.current ?? '';
+      const alreadyConverted =
+        cur.includes('CommandList\\RabbitFX\\SetTextures') ||
+        cur.includes('Resource\\RabbitFX\\Diffuse');
+      return {
+        iniPath,
+        alreadyConverted,
+        targetComponents: ['TextureOverrideComponent3'],
+        resources: [
+          {
+            section: 'ResourceDiffuse',
+            filename: 'Textures/Body_Diffuse.dds',
+            inferredType: 'diffuse',
+          },
+          {
+            section: 'ResourceLightmap',
+            filename: 'Textures/Body_Lightmap.dds',
+            inferredType: 'lightmap',
+          },
+          {
+            section: 'ResourceNormal',
+            filename: 'Textures/Body_Normal.dds',
+            inferredType: 'normalmap',
+          },
+        ],
+        suggestedDiffuse: 'ResourceDiffuse',
+        suggestedLightmap: 'ResourceLightmap',
+        suggestedNormalmap: 'ResourceNormal',
+        suggestedGlowmap: null,
+      };
+    }
+    return invoke<RabbitFxAnalysisDto>('analyze_rabbitfx', { iniPath });
+  },
+
+  async applyRabbitFx(request: RabbitFxApplyRequest): Promise<DryRunDto> {
+    if (!IS_TAURI) {
+      const st = previewInis[request.iniPath];
+      if (st) {
+        st.hasBackup = true;
+        st.current = st.current.replace(
+          'handling = skip',
+          `handling = skip\nrun = CommandList\\RabbitFX\\Run\nResource\\RabbitFX\\Diffuse = ref ${request.diffuseResource || 'ResourceDiffuse'}\nResource\\RabbitFX\\Lightmap = ref ${request.lightmapResource || 'ResourceLightmap'}\nResource\\RabbitFX\\Normalmap = ref ${request.normalmapResource || 'ResourceNormal'}\nrun = CommandList\\RabbitFX\\SetTextures`,
+        );
+      }
+      return {
+        presetId: 'rabbitfx-stable-textures',
+        injectedLines: 5,
+        touchedSections: 1,
+        alreadyAppliedLines: 0,
+        matchingSectionsTotal: 1,
+        preview: [
+          '[TextureOverrideComponent3]',
+          '+ run = CommandList\\RabbitFX\\Run',
+          `+ Resource\\RabbitFX\\Diffuse = ref ${request.diffuseResource || 'ResourceDiffuse'}`,
+          `+ Resource\\RabbitFX\\Lightmap = ref ${request.lightmapResource || 'ResourceLightmap'}`,
+          `+ Resource\\RabbitFX\\Normalmap = ref ${request.normalmapResource || 'ResourceNormal'}`,
+          '+ run = CommandList\\RabbitFX\\SetTextures',
+        ],
+        hasBackup: true,
+      };
+    }
+    return invoke<DryRunDto>('apply_rabbitfx', { request });
   },
 
   async revealInExplorer(path: string): Promise<void> {
