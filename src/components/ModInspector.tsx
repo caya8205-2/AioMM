@@ -777,7 +777,7 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col gap-2">
                 <button
                   type="button"
                   disabled={
@@ -785,7 +785,7 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
                     (!diffuseRes && !normalmapRes && !lightmapRes)
                   }
                   onClick={() => void handleApplyRabbitFx()}
-                  className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-hairline-strong bg-surface-elevated px-3 text-[13px] font-medium text-ink-bright transition-colors hover:bg-surface-card disabled:opacity-50 sm:min-h-[36px]"
+                  className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md border border-hairline-strong bg-surface-elevated px-3 py-2 text-[13px] font-medium text-ink-bright transition-colors hover:bg-surface-card disabled:opacity-50 sm:min-h-[36px]"
                 >
                   <Icon icon={Icons.check} size={14} className="mr-1.5" />
                   <span>
@@ -804,7 +804,7 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
                       'https://gamebanana.com/mods/527815',
                     )
                   }
-                  className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-hairline bg-surface px-3 text-[12px] font-medium text-ink-body hover:border-hairline-strong hover:text-ink-bright sm:min-h-[36px]"
+                  className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-md border border-hairline bg-surface px-3 py-2 text-[12px] font-medium text-ink-body hover:border-hairline-strong hover:text-ink-bright sm:min-h-[36px]"
                 >
                   <Icon icon={Icons.external} size={13} className="text-ink-mute" />
                   <span>Get RabbitFX (GameBanana)</span>

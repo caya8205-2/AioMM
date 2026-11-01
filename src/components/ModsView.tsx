@@ -106,9 +106,46 @@ export function ModsView(props: ModsViewProps): JSX.Element {
   const [sortBy, setSortBy] = useState<ModSort>('name-asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(30);
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aiomm:inspectorWidth');
+      if (saved) {
+        const n = Number(saved);
+        if (n >= 280 && n <= 700) return n;
+      }
+    } catch {}
+    return 360;
+  });
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [installingZip, setInstallingZip] = useState(false);
+
+  function handleInspectorResizeStart(e: React.MouseEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = inspectorWidth;
+
+    function onMouseMove(ev: MouseEvent) {
+      const delta = startX - ev.clientX;
+      const maxW = Math.min(700, Math.max(340, window.innerWidth - 320));
+      const nextW = Math.max(280, Math.min(maxW, startW + delta));
+      setInspectorWidth(nextW);
+    }
+
+    function onMouseUp(ev: MouseEvent) {
+      const delta = startX - ev.clientX;
+      const maxW = Math.min(700, Math.max(340, window.innerWidth - 320));
+      const finalW = Math.max(280, Math.min(maxW, startW + delta));
+      try {
+        localStorage.setItem('aiomm:inspectorWidth', String(finalW));
+      } catch {}
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    }
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }
 
   const counts = useMemo(() => {
     let active = 0;
@@ -874,8 +911,16 @@ export function ModsView(props: ModsViewProps): JSX.Element {
       {selectedMod && (
         <aside
           aria-label="Mod inspector"
-          className="fixed inset-0 z-40 flex flex-col bg-canvas md:static md:inset-auto md:z-auto md:h-full md:w-[340px] md:shrink-0 md:border-l md:border-hairline md:bg-surface lg:w-[390px]"
+          style={{ width: `${inspectorWidth}px` }}
+          className="relative fixed inset-0 z-40 flex flex-col bg-canvas select-none md:static md:inset-auto md:z-auto md:h-full md:shrink-0 md:border-l md:border-hairline md:bg-surface"
         >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Drag to resize inspector panel"
+            onMouseDown={handleInspectorResizeStart}
+            className="hidden md:block absolute -left-1 top-0 bottom-0 z-50 w-2 cursor-col-resize transition-colors hover:bg-white/30 active:bg-white/50"
+          />
           <ModInspector
             key={selectedMod.id}
             mod={selectedMod}

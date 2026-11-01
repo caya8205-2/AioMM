@@ -37,6 +37,7 @@ interface FolderSwitcherProps {
   onPickFolder: () => void;
   onRefresh: () => void;
   compact?: boolean;
+  collapsed?: boolean;
 }
 
 function FolderSwitcher({
@@ -47,6 +48,7 @@ function FolderSwitcher({
   onPickFolder,
   onRefresh,
   compact = false,
+  collapsed = false,
 }: FolderSwitcherProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -82,8 +84,14 @@ function FolderSwitcher({
     : 'Select Mods Folder';
 
   return (
-    <div className="flex min-w-0 items-center gap-1.5" ref={containerRef}>
-      <div className="relative min-w-0 flex-1">
+    <div
+      className={clsx(
+        'flex items-center',
+        collapsed ? 'justify-center w-full' : 'min-w-0 gap-1.5',
+      )}
+      ref={containerRef}
+    >
+      <div className={clsx('relative', collapsed ? '' : 'min-w-0 flex-1')}>
         <button
           type="button"
           onClick={() => setOpen((prev) => !prev)}
@@ -91,36 +99,50 @@ function FolderSwitcher({
           aria-expanded={open}
           title={currentRoot ?? 'Select Mods Folder'}
           className={clsx(
-            'flex w-full min-w-0 items-center justify-between gap-2 rounded-md border bg-surface-elevated px-2.5 text-left transition-colors',
-            compact ? 'min-h-[44px] max-w-[200px]' : 'h-9',
+            'flex items-center rounded-md border transition-colors',
+            collapsed
+              ? 'h-9 w-9 justify-center bg-surface-elevated'
+              : compact
+                ? 'min-h-[44px] max-w-[200px] w-full justify-between gap-2 bg-surface-elevated px-2.5 text-left'
+                : 'h-9 w-full justify-between gap-2 bg-surface-elevated px-2.5 text-left',
             open
               ? 'border-hairline-strong text-ink-bright'
               : 'border-hairline text-ink-body hover:border-hairline-strong hover:text-ink-bright',
           )}
         >
-          <span className="flex min-w-0 items-center gap-2">
+          {collapsed ? (
             <Icon
               icon={currentRoot ? Icons.folderOpen : Icons.folder}
-              size={15}
+              size={16}
               className="shrink-0 text-ink-mute"
             />
-            <span
-              className={clsx(
-                'truncate text-[13px] font-medium',
-                currentRoot ? 'text-ink-bright' : 'text-ink-mute',
-              )}
-            >
-              {activeLabel}
-            </span>
-          </span>
-          <Icon
-            icon={Icons.chevronDown}
-            size={14}
-            className={clsx(
-              'shrink-0 text-ink-mute transition-transform',
-              open && 'rotate-180',
-            )}
-          />
+          ) : (
+            <>
+              <span className="flex min-w-0 items-center gap-2">
+                <Icon
+                  icon={currentRoot ? Icons.folderOpen : Icons.folder}
+                  size={15}
+                  className="shrink-0 text-ink-mute"
+                />
+                <span
+                  className={clsx(
+                    'truncate text-[13px] font-medium',
+                    currentRoot ? 'text-ink-bright' : 'text-ink-mute',
+                  )}
+                >
+                  {activeLabel}
+                </span>
+              </span>
+              <Icon
+                icon={Icons.chevronDown}
+                size={14}
+                className={clsx(
+                  'shrink-0 text-ink-mute transition-transform',
+                  open && 'rotate-180',
+                )}
+              />
+            </>
+          )}
         </button>
 
         {open && (
@@ -128,8 +150,12 @@ function FolderSwitcher({
             role="menu"
             aria-label="Mods folder switcher"
             className={clsx(
-              'absolute top-full z-50 mt-1.5 w-[264px] max-w-[calc(100vw-24px)] rounded-md border border-hairline-strong bg-surface-elevated p-1.5',
-              compact ? 'right-0' : 'left-0',
+              'absolute z-50 rounded-md border border-hairline-strong bg-surface-elevated p-1.5 shadow-2xl',
+              collapsed
+                ? 'left-full top-0 ml-2 w-[264px]'
+                : compact
+                  ? 'right-0 top-full mt-1.5 w-[264px] max-w-[calc(100vw-24px)]'
+                  : 'left-0 top-full mt-1.5 w-[264px] max-w-[calc(100vw-24px)]',
             )}
           >
             <button
@@ -247,19 +273,21 @@ function FolderSwitcher({
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={onRefresh}
-        disabled={!currentRoot}
-        title="Rescan current folder"
-        aria-label="Rescan mods folder"
-        className={clsx(
-          'flex shrink-0 items-center justify-center rounded-md border border-hairline bg-surface-elevated text-ink-body transition-colors hover:border-hairline-strong hover:text-ink-bright disabled:cursor-not-allowed disabled:opacity-40',
-          compact ? 'min-h-[44px] min-w-[44px]' : 'h-9 w-9',
-        )}
-      >
-        <Icon icon={Icons.refresh} size={15} />
-      </button>
+      {!collapsed && (
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={!currentRoot}
+          title="Rescan current folder"
+          aria-label="Rescan mods folder"
+          className={clsx(
+            'flex shrink-0 items-center justify-center rounded-md border border-hairline bg-surface-elevated text-ink-body transition-colors hover:border-hairline-strong hover:text-ink-bright disabled:cursor-not-allowed disabled:opacity-40',
+            compact ? 'min-h-[44px] min-w-[44px]' : 'h-9 w-9',
+          )}
+        >
+          <Icon icon={Icons.refresh} size={15} />
+        </button>
+      )}
     </div>
   );
 }
@@ -310,31 +338,108 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     },
   ];
 
+  const [width, setWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aiomm:sidebarWidth');
+      if (saved) {
+        const n = Number(saved);
+        if (n >= 170 && n <= 380) return n;
+      }
+    } catch {}
+    return 220;
+  });
+
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('aiomm:sidebarCollapsed') === 'true';
+    } catch {}
+    return false;
+  });
+
+  function toggleCollapse() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('aiomm:sidebarCollapsed', String(next));
+      } catch {}
+      return next;
+    });
+  }
+
+  function handleResizeStart(e: React.MouseEvent) {
+    if (collapsed) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = width;
+
+    function onMouseMove(ev: MouseEvent) {
+      const delta = ev.clientX - startX;
+      const nextW = Math.max(170, Math.min(380, startW + delta));
+      setWidth(nextW);
+    }
+
+    function onMouseUp(ev: MouseEvent) {
+      const delta = ev.clientX - startX;
+      const finalW = Math.max(170, Math.min(380, startW + delta));
+      try {
+        localStorage.setItem('aiomm:sidebarWidth', String(finalW));
+      } catch {}
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    }
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }
+
   return (
     <>
       <aside
         aria-label="Primary sidebar"
-        className="hidden w-[220px] shrink-0 flex-col border-r border-hairline bg-surface sm:flex lg:w-[240px]"
+        style={{ width: collapsed ? '60px' : `${width}px` }}
+        className="relative hidden shrink-0 flex-col border-r border-hairline bg-surface select-none sm:flex"
       >
-        <div className="flex shrink-0 flex-col gap-3 border-b border-hairline p-3">
-          <div className="flex items-center justify-between gap-2 px-0.5">
-            <div className="flex items-center gap-2.5">
-              <img
-                src="/icon.png"
-                alt="AIOMM"
-                className="h-8 w-8 shrink-0 rounded-md border border-hairline object-cover shadow-xs"
+        {!collapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Drag to resize sidebar"
+            onMouseDown={handleResizeStart}
+            className="absolute top-0 right-0 bottom-0 z-30 w-1.5 cursor-col-resize transition-colors hover:bg-white/30 active:bg-white/50"
+          />
+        )}
+
+        <div
+          className={clsx(
+            'flex shrink-0 flex-col gap-2.5 border-b border-hairline',
+            collapsed ? 'items-center p-2' : 'p-3',
+          )}
+        >
+          <div
+            className={clsx(
+              'flex items-center',
+              collapsed ? 'w-full justify-center' : 'justify-between px-0.5',
+            )}
+          >
+            <button
+              type="button"
+              onClick={toggleCollapse}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className={clsx(
+                'inline-flex min-h-[32px] items-center rounded-md text-xs text-ink-mute transition-colors hover:bg-surface-elevated hover:text-ink-bright',
+                collapsed ? 'h-8 w-8 justify-center p-0' : 'gap-1.5 px-2 py-1',
+              )}
+            >
+              <Icon
+                icon={collapsed ? Icons.chevronRight : Icons.arrowLeft}
+                size={15}
               />
-              <div className="flex flex-col">
-                <span className="text-[16px] font-semibold tracking-tight text-ink">
-                  AIOMM
-                </span>
-                <span className="text-[10px] font-normal tracking-wide text-ink-mute">
-                  All in one mod manager
-                </span>
-              </div>
-            </div>
-            {isPreviewMode && (
-              <span className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 text-[11px] font-medium text-ink-mute">
+              {!collapsed && <span className="font-medium">Collapse</span>}
+            </button>
+
+            {!collapsed && isPreviewMode && (
+              <span className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 text-[10px] font-medium text-ink-mute">
                 Preview Mode
               </span>
             )}
@@ -347,12 +452,16 @@ export function Sidebar(props: SidebarProps): JSX.Element {
             onSelectRoot={onSelectRoot}
             onPickFolder={onPickFolder}
             onRefresh={onRefresh}
+            collapsed={collapsed}
           />
         </div>
 
         <nav
           aria-label="Workspace sections"
-          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2.5"
+          className={clsx(
+            'flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto',
+            collapsed ? 'items-center p-2' : 'p-2.5',
+          )}
         >
           {navItems.map((item) => {
             const isActive = activeView === item.id;
@@ -362,26 +471,35 @@ export function Sidebar(props: SidebarProps): JSX.Element {
                 type="button"
                 onClick={() => onSelectView(item.id)}
                 aria-current={isActive ? 'page' : undefined}
+                title={collapsed ? item.label : undefined}
                 className={clsx(
-                  'flex min-h-[42px] w-full items-center justify-between gap-2.5 rounded-md border px-2 py-1.5 text-left text-[14px] font-medium transition-colors',
+                  'flex min-h-[40px] items-center rounded-md border transition-colors',
+                  collapsed
+                    ? 'h-10 w-10 justify-center p-0'
+                    : 'w-full justify-between gap-2.5 px-2 py-1.5 text-left text-[14px] font-medium',
                   isActive
                     ? 'border-hairline bg-surface-elevated text-ink-bright'
                     : 'border-transparent text-ink-body hover:bg-surface-elevated/60 hover:text-ink-bright',
                 )}
               >
-                <span className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className={clsx(
+                    'flex min-w-0 items-center',
+                    collapsed ? 'justify-center' : 'gap-2.5',
+                  )}
+                >
                   <span
                     className={clsx(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-hairline bg-surface-card transition-colors',
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-hairline bg-surface-card transition-colors',
                       isActive ? 'text-ink-bright' : 'text-ink-mute',
                     )}
                   >
-                    <Icon icon={item.icon} size={16} />
+                    <Icon icon={item.icon} size={15} />
                   </span>
-                  <span className="truncate">{item.label}</span>
+                  {!collapsed && <span className="truncate">{item.label}</span>}
                 </span>
 
-                {item.badge && (
+                {!collapsed && item.badge && (
                   <span
                     className={clsx(
                       'shrink-0 rounded-xs px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
@@ -398,7 +516,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
           })}
         </nav>
 
-        {currentRoot && (
+        {!collapsed && currentRoot && (
           <div
             title={currentRoot}
             className="shrink-0 truncate border-t border-hairline px-3 py-2.5 font-mono text-[11px] text-ink-mute"
