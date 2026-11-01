@@ -372,6 +372,9 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     const startX = e.clientX;
     const startW = width;
 
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
     function onMouseMove(ev: MouseEvent) {
       const delta = ev.clientX - startX;
       const nextW = Math.max(170, Math.min(380, startW + delta));
@@ -379,6 +382,8 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     }
 
     function onMouseUp(ev: MouseEvent) {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       const delta = ev.clientX - startX;
       const finalW = Math.max(170, Math.min(380, startW + delta));
       try {
@@ -405,8 +410,10 @@ export function Sidebar(props: SidebarProps): JSX.Element {
             aria-orientation="vertical"
             title="Drag to resize sidebar"
             onMouseDown={handleResizeStart}
-            className="absolute top-0 right-0 bottom-0 z-30 w-1.5 cursor-col-resize transition-colors hover:bg-white/30 active:bg-white/50"
-          />
+            className="group absolute -right-2 top-0 bottom-0 z-30 w-4 cursor-col-resize select-none"
+          >
+            <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] bg-transparent transition-colors group-hover:bg-white/40 group-active:bg-white/70" />
+          </div>
         )}
 
         <div

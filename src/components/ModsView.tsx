@@ -125,17 +125,22 @@ export function ModsView(props: ModsViewProps): JSX.Element {
     const startX = e.clientX;
     const startW = inspectorWidth;
 
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
     function onMouseMove(ev: MouseEvent) {
       const delta = startX - ev.clientX;
-      const maxW = Math.min(700, Math.max(340, window.innerWidth - 320));
-      const nextW = Math.max(280, Math.min(maxW, startW + delta));
+      const maxW = Math.min(700, Math.max(300, window.innerWidth - 300));
+      const nextW = Math.max(260, Math.min(maxW, startW + delta));
       setInspectorWidth(nextW);
     }
 
     function onMouseUp(ev: MouseEvent) {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       const delta = startX - ev.clientX;
-      const maxW = Math.min(700, Math.max(340, window.innerWidth - 320));
-      const finalW = Math.max(280, Math.min(maxW, startW + delta));
+      const maxW = Math.min(700, Math.max(300, window.innerWidth - 300));
+      const finalW = Math.max(260, Math.min(maxW, startW + delta));
       try {
         localStorage.setItem('aiomm:inspectorWidth', String(finalW));
       } catch {}
@@ -912,15 +917,17 @@ export function ModsView(props: ModsViewProps): JSX.Element {
         <aside
           aria-label="Mod inspector"
           style={{ width: `${inspectorWidth}px` }}
-          className="relative fixed inset-0 z-40 flex flex-col bg-canvas select-none md:static md:inset-auto md:z-auto md:h-full md:shrink-0 md:border-l md:border-hairline md:bg-surface"
+          className="relative fixed inset-0 z-40 flex flex-col bg-canvas sm:relative sm:inset-auto sm:z-auto sm:h-full sm:shrink-0 sm:border-l sm:border-hairline sm:bg-surface"
         >
           <div
             role="separator"
             aria-orientation="vertical"
             title="Drag to resize inspector panel"
             onMouseDown={handleInspectorResizeStart}
-            className="hidden md:block absolute -left-1 top-0 bottom-0 z-50 w-2 cursor-col-resize transition-colors hover:bg-white/30 active:bg-white/50"
-          />
+            className="group hidden sm:block absolute -left-2 top-0 bottom-0 z-50 w-4 cursor-col-resize select-none"
+          >
+            <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] bg-transparent transition-colors group-hover:bg-white/40 group-active:bg-white/70" />
+          </div>
           <ModInspector
             key={selectedMod.id}
             mod={selectedMod}
