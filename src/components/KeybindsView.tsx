@@ -37,6 +37,101 @@ function cleanSectionName(section: string): string {
   return stripped.length > 0 ? stripped : section;
 }
 
+function PaginationBar({
+  currentPage,
+  totalPages,
+  startIndex,
+  endIndex,
+  totalItems,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  startIndex: number;
+  endIndex: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalItems === 0) return null;
+
+  const pages: (number | 'ellipsis')[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push('ellipsis');
+    const start = Math.max(2, currentPage - 1);
+    const end = Math.min(totalPages - 1, currentPage + 1);
+    for (let i = start; i <= end; i++) pages.push(i);
+    if (currentPage < totalPages - 2) pages.push('ellipsis');
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-hairline pt-4 sm:flex-row">
+      <span className="text-xs text-ink-mute">
+        Showing <span className="font-medium text-ink-body">{startIndex + 1}</span> to{' '}
+        <span className="font-medium text-ink-body">{endIndex}</span> of{' '}
+        <span className="font-medium text-ink-body">{totalItems}</span> hotkeys
+      </span>
+
+      {totalPages > 1 && (
+        <div className="flex flex-wrap items-center gap-1">
+          <button
+            type="button"
+            disabled={currentPage <= 1}
+            onClick={() => onPageChange(currentPage - 1)}
+            aria-label="Previous page"
+            className="inline-flex min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] items-center justify-center rounded-md border border-hairline bg-surface-elevated text-ink-mute hover:border-hairline-strong hover:text-ink-bright disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Icon icon={Icons.arrowLeft} size={13} />
+          </button>
+
+          {pages.map((p, idx) => {
+            if (p === 'ellipsis') {
+              return (
+                <span
+                  key={`ellipsis-${idx}`}
+                  className="flex min-w-[28px] items-center justify-center text-xs text-ink-mute"
+                >
+                  &hellip;
+                </span>
+              );
+            }
+            const isActive = p === currentPage;
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => onPageChange(p)}
+                aria-current={isActive ? 'page' : undefined}
+                className={clsx(
+                  'inline-flex min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] items-center justify-center rounded-md text-xs font-medium transition-colors',
+                  isActive
+                    ? 'border border-hairline-strong bg-white font-semibold text-black'
+                    : 'border border-hairline bg-surface-elevated text-ink-body hover:border-hairline-strong hover:text-ink-bright',
+                )}
+              >
+                {p}
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            disabled={currentPage >= totalPages}
+            onClick={() => onPageChange(currentPage + 1)}
+            aria-label="Next page"
+            className="inline-flex min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] items-center justify-center rounded-md border border-hairline bg-surface-elevated text-ink-mute hover:border-hairline-strong hover:text-ink-bright disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Icon icon={Icons.chevronRight} size={13} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function KeybindsView({
   root,
   mods,
@@ -48,6 +143,8 @@ export function KeybindsView({
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<KeybindFilter>('all');
   const [sortBy, setSortBy] = useState<KeybindSort>('key-asc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [showCheatSheet, setShowCheatSheet] = useState(false);
   const [copiedCheatSheet, setCopiedCheatSheet] = useState(false);
   const [captureTarget, setCaptureTarget] = useState<ActiveBindingRow | null>(null);
@@ -173,6 +270,18 @@ export function KeybindsView({
 
     return result;
   }, [activeBindings, query, filter, sortBy, conflictPairSet]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, filter, sortBy, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredBindings.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, filteredBindings.length);
+  const paginatedBindings = useMemo(() => {
+    return filteredBindings.slice(startIndex, endIndex);
+  }, [filteredBindings, startIndex, endIndex]);
 
   const collidingSameModSections = useMemo(() => {
     if (!captureTarget) return [];
@@ -380,144 +489,66 @@ export function KeybindsView({
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-      <header className="flex flex-col gap-1 border-b border-hairline pb-5">
-        <h1 className="text-xl font-medium tracking-tight text-ink sm:text-2xl">
-          Hotkeys
-        </h1>
-        <p className="text-sm text-ink-mute">
-          {activeBindings.length} active {activeBindings.length === 1 ? 'hotkey' : 'hotkeys'} across{' '}
-          {activeModWithKeysCount} enabled {activeModWithKeysCount === 1 ? 'mod' : 'mods'} (checks duplicate keys inside each mod)
-        </p>
-      </header>
-
-      <section className="mt-6" aria-label="Conflict status">
-        {conflicts.length === 0 ? (
-          <div className="rounded-md border border-status-green/25 bg-status-green-soft px-4 py-3 text-sm text-status-green">
-            No duplicate hotkeys detected inside any active mod.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="rounded-md border border-status-red/35 bg-status-red-soft px-4 py-3 text-sm text-status-red">
-              {conflicts.length} same-mod hotkey {conflicts.length === 1 ? 'conflict' : 'conflicts'} detected. Multiple toggle sections inside the same mod share a key and will trigger together.
-            </div>
-
-            <div className="space-y-3">
-              {conflicts.map((conflict) => {
-                const sampleRawKey =
-                  conflict.entries[0]?.keybind.rawKey ?? conflict.normalizedKey;
-                const mod = modsById.get(conflict.modId);
-
-                return (
-                  <div
-                    key={conflict.id}
-                    className="rounded-lg border border-status-red/40 bg-surface p-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-3">
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="text-sm font-medium text-ink">
-                          {conflict.modDisplayName}
-                        </span>
-                        <Keycap rawKey={sampleRawKey} size="md" tone="conflict" />
-                        <span className="text-xs text-status-red">
-                          Bound to {conflict.entries.length} sections in this mod
-                        </span>
-                      </div>
-                      <span className="font-mono text-xs text-ink-mute">
-                        {conflict.normalizedKey}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 divide-y divide-hairline">
-                      {conflict.entries.map((entry) => (
-                        <div
-                          key={`${entry.modId}-${entry.keybind.iniPath}-${entry.keybind.keyLineIdx}`}
-                          className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-medium text-ink">
-                                {cleanSectionName(entry.keybind.section)}
-                              </span>
-                              {entry.keybind.variable && (
-                                <span className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-xs text-ink-body">
-                                  {entry.keybind.variable}
-                                </span>
-                              )}
-                            </div>
-                            <p className="mt-0.5 break-all font-mono text-xs text-ink-mute">
-                              {entry.keybind.iniRelName} [{entry.keybind.section}]
-                            </p>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
-                            {mod && (
-                              <button
-                                type="button"
-                                onClick={() => openCaptureModal(mod, entry.keybind)}
-                                className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-hairline-strong bg-surface-elevated px-3 text-sm font-medium text-ink-bright transition-colors hover:bg-surface-card"
-                              >
-                                Change Key
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="mt-8" aria-label="All active hotkeys">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-base font-medium text-ink">All Active Hotkeys</h2>
-            <p className="text-xs text-ink-mute">
-              Search by mod name, toggle section, key, or variable.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowCheatSheet(true)}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-hairline bg-surface-elevated px-3 text-xs font-medium text-ink-bright hover:border-hairline-strong sm:min-h-[36px]"
-            >
-              <Icon icon={Icons.file} size={14} className="text-ink-mute" />
-              <span>Cheat Sheet</span>
-            </button>
-
-            <div className="relative w-full sm:w-64">
-              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-ink-mute">
-                <Icon icon={Icons.search} size={15} />
-              </span>
-              <input
-                type="search"
-                data-view-search="keybinds"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Filter hotkeys..."
-                aria-label="Filter active hotkeys"
-                className="min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated pl-9 pr-9 text-sm text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery('')}
-                  aria-label="Clear hotkey filter"
-                  className="absolute inset-y-0 right-0 flex min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] items-center justify-center text-ink-mute hover:text-ink-bright"
-                >
-                  <Icon icon={Icons.close} size={14} />
-                </button>
-              )}
-            </div>
-          </div>
+      {/* 1. Header with title and quick actions */}
+      <header className="flex flex-col gap-3 border-b border-hairline pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-medium tracking-tight text-ink sm:text-2xl">
+            Hotkeys
+          </h1>
+          <p className="mt-0.5 text-sm text-ink-mute">
+            {activeBindings.length} active {activeBindings.length === 1 ? 'hotkey' : 'hotkeys'} across{' '}
+            {activeModWithKeysCount} enabled {activeModWithKeysCount === 1 ? 'mod' : 'mods'}
+          </p>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowCheatSheet(true)}
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-hairline bg-surface-elevated px-3 text-xs font-medium text-ink-bright hover:border-hairline-strong sm:min-h-[36px]"
+          >
+            <Icon icon={Icons.file} size={14} className="text-ink-mute" />
+            <span>Cheat Sheet</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void onRefresh()}
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-hairline bg-surface-elevated px-3 text-xs font-medium text-ink-bright hover:border-hairline-strong sm:min-h-[36px]"
+          >
+            <Icon icon={Icons.refresh} size={14} className="text-ink-mute" />
+            <span>Rescan</span>
+          </button>
+        </div>
+      </header>
+
+      {/* 2. Primary Search & Toolbar right at top */}
+      <section className="mt-6 space-y-3" aria-label="Hotkey search and filters">
+        <div className="relative w-full">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-ink-mute">
+            <Icon icon={Icons.search} size={16} />
+          </span>
+          <input
+            type="search"
+            data-view-search="keybinds"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search hotkeys by mod name, toggle section, key label, or variable..."
+            aria-label="Filter active hotkeys"
+            className="min-h-[44px] w-full rounded-md border border-hairline bg-surface-elevated pl-10 pr-10 text-sm text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong focus:outline-none sm:min-h-[38px]"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear hotkey filter"
+              className="absolute inset-y-0 right-0 flex min-h-[44px] min-w-[44px] items-center justify-center text-ink-mute hover:text-ink-bright sm:min-h-[38px] sm:min-w-[38px]"
+            >
+              <Icon icon={Icons.close} size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div
             role="tablist"
             aria-label="Filter hotkeys"
@@ -538,6 +569,7 @@ export function KeybindsView({
               { id: 'combos' as const, label: 'Combos', count: counts.combos },
             ].map((tab) => {
               const isActive = filter === tab.id;
+              const isConflictTab = tab.id === 'conflicts';
               return (
                 <button
                   key={tab.id}
@@ -548,8 +580,12 @@ export function KeybindsView({
                   className={clsx(
                     'inline-flex min-h-[44px] items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-medium transition-colors sm:min-h-[32px]',
                     isActive
-                      ? 'border-hairline-strong bg-surface-elevated text-ink-bright'
-                      : 'border-transparent bg-transparent text-ink-body hover:bg-surface-elevated/60 hover:text-ink-bright',
+                      ? isConflictTab
+                        ? 'border-status-red/40 bg-status-red-soft text-status-red'
+                        : 'border-hairline-strong bg-surface-elevated text-ink-bright'
+                      : isConflictTab
+                        ? 'border-status-red/20 bg-status-red-soft/40 text-status-red hover:bg-status-red-soft'
+                        : 'border-transparent bg-transparent text-ink-body hover:bg-surface-elevated/60 hover:text-ink-bright',
                   )}
                 >
                   <span>{tab.label}</span>
@@ -557,6 +593,7 @@ export function KeybindsView({
                     className={clsx(
                       'text-[11px] tabular-nums',
                       isActive ? 'text-ink-charcoal' : 'text-ink-mute',
+                      isConflictTab && 'text-status-red font-semibold',
                     )}
                   >
                     {tab.count}
@@ -566,93 +603,216 @@ export function KeybindsView({
             })}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-[12px] text-ink-mute">Sort:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as KeybindSort)}
-              aria-label="Sort hotkeys"
-              className="min-h-[44px] rounded-md border border-hairline bg-surface-elevated px-2 py-1 text-[12px] font-medium text-ink-bright focus:border-hairline-strong sm:min-h-[32px]"
-            >
-              <option value="key-asc">Hotkey (A to Z)</option>
-              <option value="key-desc">Hotkey (Z to A)</option>
-              <option value="mod-asc">Mod Name</option>
-              <option value="section-asc">Toggle Section</option>
-              <option value="conflicts-first">Conflicts First</option>
-            </select>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[12px] text-ink-mute">Sort:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as KeybindSort)}
+                aria-label="Sort hotkeys"
+                className="min-h-[44px] rounded-md border border-hairline bg-surface-elevated px-2 py-1 text-[12px] font-medium text-ink-bright focus:border-hairline-strong sm:min-h-[32px]"
+              >
+                <option value="key-asc">Hotkey (A to Z)</option>
+                <option value="key-desc">Hotkey (Z to A)</option>
+                <option value="mod-asc">Mod Name</option>
+                <option value="section-asc">Toggle Section</option>
+                <option value="conflicts-first">Conflicts First</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[12px] text-ink-mute">Per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                aria-label="Items per page"
+                className="min-h-[44px] rounded-md border border-hairline bg-surface-elevated px-2 py-1 text-[12px] font-medium text-ink-bright focus:border-hairline-strong sm:min-h-[32px]"
+              >
+                <option value="15">15</option>
+                <option value="30">30</option>
+                <option value="50">50</option>
+              </select>
+            </div>
           </div>
         </div>
+      </section>
 
+      {/* 3. Conflict Alert Banner (compact when not on conflicts tab) */}
+      {conflicts.length > 0 && filter !== 'conflicts' && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-status-red/35 bg-status-red-soft px-4 py-2.5 text-xs text-status-red">
+          <div className="flex items-center gap-2">
+            <Icon icon={Icons.alert} size={15} />
+            <span>
+              {conflicts.length} same-mod hotkey {conflicts.length === 1 ? 'conflict' : 'conflicts'} detected. Multiple toggle sections inside the same mod share a key.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFilter('conflicts')}
+            className="rounded-xs border border-status-red/40 bg-surface px-2 py-1 font-medium text-status-red hover:bg-status-red/10"
+          >
+            Show Conflicts ({conflicts.length})
+          </button>
+        </div>
+      )}
+
+      {/* 4. Detailed Conflict Cards (when filtering by conflicts) */}
+      {filter === 'conflicts' && conflicts.length > 0 && (
+        <section className="mt-5 space-y-3" aria-label="Conflict breakdown">
+          {conflicts.map((conflict) => {
+            const sampleRawKey =
+              conflict.entries[0]?.keybind.rawKey ?? conflict.normalizedKey;
+            const mod = modsById.get(conflict.modId);
+
+            return (
+              <div
+                key={conflict.id}
+                className="rounded-lg border border-status-red/40 bg-surface p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="text-sm font-medium text-ink">
+                      {conflict.modDisplayName}
+                    </span>
+                    <Keycap rawKey={sampleRawKey} size="md" tone="conflict" />
+                    <span className="text-xs text-status-red">
+                      Bound to {conflict.entries.length} sections in this mod
+                    </span>
+                  </div>
+                  <span className="font-mono text-xs text-ink-mute">
+                    {conflict.normalizedKey}
+                  </span>
+                </div>
+
+                <div className="mt-3 divide-y divide-hairline">
+                  {conflict.entries.map((entry) => (
+                    <div
+                      key={`${entry.modId}-${entry.keybind.iniPath}-${entry.keybind.keyLineIdx}`}
+                      className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-ink">
+                            {cleanSectionName(entry.keybind.section)}
+                          </span>
+                          {entry.keybind.variable && (
+                            <span className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-xs text-ink-body">
+                              {entry.keybind.variable}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 break-all font-mono text-xs text-ink-mute">
+                          {entry.keybind.iniRelName} [{entry.keybind.section}]
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                        {mod && (
+                          <button
+                            type="button"
+                            onClick={() => openCaptureModal(mod, entry.keybind)}
+                            className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-hairline-strong bg-surface-elevated px-3 text-sm font-medium text-ink-bright transition-colors hover:bg-surface-card"
+                          >
+                            Change Key
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      )}
+
+      {/* 5. Main Hotkeys Table / List */}
+      <section className="mt-5" aria-label="Hotkeys list">
         {filteredBindings.length === 0 ? (
-          <div className="mt-4 rounded-lg border border-hairline bg-surface px-4 py-10 text-center">
+          <div className="rounded-lg border border-hairline bg-surface px-4 py-10 text-center">
             <p className="text-sm font-medium text-ink">No matching hotkeys</p>
             <p className="mt-1 text-xs text-ink-mute">
-              Nothing matched &ldquo;{query}&rdquo;. Try a key label like Up or a mod name.
+              Nothing matched &ldquo;{query}&rdquo;. Try clearing filters or search terms.
             </p>
             <button
               type="button"
-              onClick={() => setQuery('')}
+              onClick={() => {
+                setQuery('');
+                setFilter('all');
+              }}
               className="mt-4 inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-hairline bg-surface-elevated px-3.5 text-sm font-medium text-ink-bright hover:bg-surface-card"
             >
               Clear Filter
             </button>
           </div>
         ) : (
-          <div className="mt-4 divide-y divide-hairline overflow-hidden rounded-lg border border-hairline bg-surface">
-            {filteredBindings.map(({ mod, keybind }) => {
-              const isSameModConflict = conflictPairSet.has(
-                `${mod.id}::${keybind.normalizedKey}`,
-              );
+          <div>
+            <div className="divide-y divide-hairline overflow-hidden rounded-lg border border-hairline bg-surface">
+              {paginatedBindings.map(({ mod, keybind }) => {
+                const isSameModConflict = conflictPairSet.has(
+                  `${mod.id}::${keybind.normalizedKey}`,
+                );
 
-              return (
-                <div
-                  key={`${mod.id}-${keybind.iniPath}-${keybind.keyLineIdx}`}
-                  className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-surface-elevated/60 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-ink">
-                        {mod.displayName}
-                      </span>
-                      <span className="text-sm text-ink-body">
-                        {cleanSectionName(keybind.section)}
-                      </span>
-                      {isSameModConflict && (
-                        <span className="rounded-xs bg-status-red-soft px-2 py-0.5 text-xs font-medium text-status-red">
-                          Duplicate in mod
+                return (
+                  <div
+                    key={`${mod.id}-${keybind.iniPath}-${keybind.keyLineIdx}`}
+                    className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-surface-elevated/60 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-ink">
+                          {mod.displayName}
                         </span>
-                      )}
+                        <span className="text-sm text-ink-body">
+                          {cleanSectionName(keybind.section)}
+                        </span>
+                        {isSameModConflict && (
+                          <span className="rounded-xs bg-status-red-soft px-2 py-0.5 text-xs font-medium text-status-red">
+                            Duplicate in mod
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-mute">
+                        <span className="break-all font-mono">
+                          {keybind.iniRelName} [{keybind.section}]
+                        </span>
+                        {keybind.variable && (
+                          <span className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-xs text-ink-body">
+                            Cycle: {keybind.variable}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-mute">
-                      <span className="break-all font-mono">
-                        {keybind.iniRelName} [{keybind.section}]
-                      </span>
-                      {keybind.variable && (
-                        <span className="rounded-xs border border-hairline bg-surface-elevated px-1.5 py-0.5 font-mono text-xs text-ink-body">
-                          Cycle: {keybind.variable}
-                        </span>
-                      )}
+                    <div className="flex flex-wrap items-center justify-between gap-3 sm:shrink-0 sm:justify-end">
+                      <Keycap
+                        rawKey={keybind.rawKey}
+                        size="md"
+                        tone={isSameModConflict ? 'conflict' : 'default'}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => openCaptureModal(mod, keybind)}
+                        className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-hairline bg-surface-elevated px-3 text-sm font-medium text-ink-bright transition-colors hover:bg-surface-card"
+                      >
+                        Change Key
+                      </button>
                     </div>
                   </div>
+                );
+              })}
+            </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-3 sm:shrink-0 sm:justify-end">
-                    <Keycap
-                      rawKey={keybind.rawKey}
-                      size="md"
-                      tone={isSameModConflict ? 'conflict' : 'default'}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => openCaptureModal(mod, keybind)}
-                      className="inline-flex min-h-[44px] sm:min-h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-hairline bg-surface-elevated px-3 text-sm font-medium text-ink-bright transition-colors hover:bg-surface-card"
-                    >
-                      Change Key
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+            {/* Pagination Controls */}
+            <PaginationBar
+              currentPage={safePage}
+              totalPages={totalPages}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              totalItems={filteredBindings.length}
+              onPageChange={(p) => setCurrentPage(p)}
+            />
           </div>
         )}
       </section>
