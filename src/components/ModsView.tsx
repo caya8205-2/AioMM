@@ -106,6 +106,8 @@ export function ModsView(props: ModsViewProps): JSX.Element {
   const [sortBy, setSortBy] = useState<ModSort>('name-asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(30);
+  const DEFAULT_INSPECTOR_WIDTH = 360;
+
   const [inspectorWidth, setInspectorWidth] = useState(() => {
     try {
       const saved = localStorage.getItem('aiomm:inspectorWidth');
@@ -114,11 +116,18 @@ export function ModsView(props: ModsViewProps): JSX.Element {
         if (n >= 280 && n <= 700) return n;
       }
     } catch {}
-    return 360;
+    return DEFAULT_INSPECTOR_WIDTH;
   });
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [installingZip, setInstallingZip] = useState(false);
+
+  function handleResetInspectorWidth() {
+    setInspectorWidth(DEFAULT_INSPECTOR_WIDTH);
+    try {
+      localStorage.setItem('aiomm:inspectorWidth', String(DEFAULT_INSPECTOR_WIDTH));
+    } catch {}
+  }
 
   function handleInspectorResizeStart(e: React.MouseEvent) {
     e.preventDefault();
@@ -922,8 +931,9 @@ export function ModsView(props: ModsViewProps): JSX.Element {
           <div
             role="separator"
             aria-orientation="vertical"
-            title="Drag to resize inspector panel"
+            title="Drag to resize, double-click to reset"
             onMouseDown={handleInspectorResizeStart}
+            onDoubleClick={handleResetInspectorWidth}
             className="group hidden sm:block absolute -left-2 top-0 bottom-0 z-50 w-4 cursor-col-resize select-none"
           >
             <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] bg-transparent transition-colors group-hover:bg-white/40 group-active:bg-white/70" />

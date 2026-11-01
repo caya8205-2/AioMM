@@ -338,6 +338,8 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     },
   ];
 
+  const DEFAULT_SIDEBAR_WIDTH = 220;
+
   const [width, setWidth] = useState(() => {
     try {
       const saved = localStorage.getItem('aiomm:sidebarWidth');
@@ -346,7 +348,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
         if (n >= 170 && n <= 380) return n;
       }
     } catch {}
-    return 220;
+    return DEFAULT_SIDEBAR_WIDTH;
   });
 
   const [collapsed, setCollapsed] = useState(() => {
@@ -355,6 +357,13 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     } catch {}
     return false;
   });
+
+  function handleResetWidth() {
+    setWidth(DEFAULT_SIDEBAR_WIDTH);
+    try {
+      localStorage.setItem('aiomm:sidebarWidth', String(DEFAULT_SIDEBAR_WIDTH));
+    } catch {}
+  }
 
   function toggleCollapse() {
     setCollapsed((prev) => {
@@ -408,8 +417,9 @@ export function Sidebar(props: SidebarProps): JSX.Element {
           <div
             role="separator"
             aria-orientation="vertical"
-            title="Drag to resize sidebar"
+            title="Drag to resize, double-click to reset"
             onMouseDown={handleResizeStart}
+            onDoubleClick={handleResetWidth}
             className="group absolute -right-2 top-0 bottom-0 z-30 w-4 cursor-col-resize select-none"
           >
             <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] bg-transparent transition-colors group-hover:bg-white/40 group-active:bg-white/70" />
