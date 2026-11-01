@@ -48,6 +48,8 @@ export function KeybindsView({
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<KeybindFilter>('all');
   const [sortBy, setSortBy] = useState<KeybindSort>('key-asc');
+  const [showCheatSheet, setShowCheatSheet] = useState(false);
+  const [copiedCheatSheet, setCopiedCheatSheet] = useState(false);
   const [captureTarget, setCaptureTarget] = useState<ActiveBindingRow | null>(null);
   const [draftKey, setDraftKey] = useState('');
   const [showRawInput, setShowRawInput] = useState(false);
@@ -190,6 +192,59 @@ export function KeybindsView({
     }
     return sections;
   }, [captureTarget, draftKey]);
+
+  const cheatSheetText = useMemo(() => {
+    const lines: string[] = [
+      '========================================',
+      '       MOD HOTKEY CHEAT SHEET',
+      '========================================',
+      '',
+    ];
+
+    const activeModsWithKeys = mods.filter(
+      (m) => m.enabled && m.keybinds.length > 0,
+    );
+
+    if (activeModsWithKeys.length === 0) {
+      lines.push('No active hotkeys found in enabled mods.');
+      return lines.join('\n');
+    }
+
+    for (const mod of activeModsWithKeys) {
+      lines.push(`[${mod.displayName}]`);
+      for (const kb of mod.keybinds) {
+        const sec = cleanSectionName(kb.section);
+        lines.push(`  - ${sec}: ${kb.rawKey}`);
+      }
+      lines.push('');
+    }
+
+    return lines.join('\n');
+  }, [mods]);
+
+  async function handleCopyCheatSheet() {
+    try {
+      await navigator.clipboard.writeText(cheatSheetText);
+      setCopiedCheatSheet(true);
+      setTimeout(() => setCopiedCheatSheet(false), 2000);
+      onNotify('Copied hotkey cheat sheet to clipboard.');
+    } catch {
+      onNotify('Could not copy cheat sheet.');
+    }
+  }
+
+  function handleSaveCheatSheetFile() {
+    const blob = new Blob([cheatSheetText], {
+      type: 'text/plain;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Hotkey_Cheat_Sheet.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+    onNotify('Downloaded Hotkey_Cheat_Sheet.txt');
+  }
 
   function openCaptureModal(mod: ModEntry, keybind: KeyBind) {
     setCaptureTarget({ mod, keybind });
@@ -425,29 +480,40 @@ export function KeybindsView({
             </p>
           </div>
 
-          <div className="relative w-full sm:w-72">
-            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-ink-mute">
-              <Icon icon={Icons.search} size={15} />
-            </span>
-            <input
-              type="search"
-              data-view-search="keybinds"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter hotkeys..."
-              aria-label="Filter active hotkeys"
-              className="min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated pl-9 pr-9 text-sm text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                aria-label="Clear hotkey filter"
-                className="absolute inset-y-0 right-0 flex min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] items-center justify-center text-ink-mute hover:text-ink-bright"
-              >
-                <Icon icon={Icons.close} size={14} />
-              </button>
-            )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCheatSheet(true)}
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-hairline bg-surface-elevated px-3 text-xs font-medium text-ink-bright hover:border-hairline-strong sm:min-h-[36px]"
+            >
+              <Icon icon={Icons.file} size={14} className="text-ink-mute" />
+              <span>Cheat Sheet</span>
+            </button>
+
+            <div className="relative w-full sm:w-64">
+              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-ink-mute">
+                <Icon icon={Icons.search} size={15} />
+              </span>
+              <input
+                type="search"
+                data-view-search="keybinds"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filter hotkeys..."
+                aria-label="Filter active hotkeys"
+                className="min-h-[44px] sm:min-h-[36px] w-full rounded-md border border-hairline bg-surface-elevated pl-9 pr-9 text-sm text-ink-bright placeholder:text-ink-mute focus:border-hairline-strong"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  aria-label="Clear hotkey filter"
+                  className="absolute inset-y-0 right-0 flex min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] items-center justify-center text-ink-mute hover:text-ink-bright"
+                >
+                  <Icon icon={Icons.close} size={14} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -739,6 +805,75 @@ export function KeybindsView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showCheatSheet && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Hotkey Cheat Sheet"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
+        >
+          <div className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-lg border border-hairline-strong bg-surface shadow-2xl">
+            <div className="flex items-center justify-between border-b border-hairline p-4 sm:p-5">
+              <div>
+                <h3 className="text-base font-medium text-ink">
+                  Hotkey Cheat Sheet
+                </h3>
+                <p className="mt-0.5 text-xs text-ink-mute">
+                  Quick reference of active character mod toggles in-game.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCheatSheet(false)}
+                aria-label="Close cheat sheet"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md border border-hairline bg-surface-elevated text-ink-mute hover:text-ink-bright sm:min-h-[32px] sm:min-w-[32px]"
+              >
+                <Icon icon={Icons.close} size={14} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              <pre className="rounded-md border border-hairline bg-canvas p-3.5 font-mono text-xs leading-relaxed text-ink-bright whitespace-pre-wrap">
+                {cheatSheetText}
+              </pre>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline p-4 sm:p-5">
+              <button
+                type="button"
+                onClick={handleSaveCheatSheetFile}
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-hairline bg-surface-elevated px-3 text-xs font-medium text-ink-body hover:border-hairline-strong hover:text-ink-bright sm:min-h-[36px]"
+              >
+                <Icon icon={Icons.folderOpen} size={14} className="text-ink-mute" />
+                <span>Save as .txt</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCheatSheet(false)}
+                  className="min-h-[44px] rounded-md px-3 text-xs font-medium text-ink-mute hover:text-ink-body sm:min-h-[36px]"
+                >
+                  Close
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleCopyCheatSheet()}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md bg-white px-3.5 text-xs font-medium text-black hover:bg-[#e8e8e8] sm:min-h-[36px]"
+                >
+                  <Icon
+                    icon={copiedCheatSheet ? Icons.check : Icons.code}
+                    size={14}
+                  />
+                  <span>{copiedCheatSheet ? 'Copied to Clipboard' : 'Copy Cheat Sheet'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

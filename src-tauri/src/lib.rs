@@ -1,6 +1,7 @@
 pub mod ini;
 pub mod preset;
 pub mod scanner;
+pub mod tools;
 
 use ini::DryRunDto;
 use preset::Preset;
@@ -106,6 +107,29 @@ fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn scan_unused_assets(mod_path: String) -> Result<tools::ModCleanScanDto, String> {
+    tools::scan_unused_assets_in_mod(Path::new(&mod_path))
+}
+
+#[tauri::command]
+fn delete_unused_assets(file_paths: Vec<String>) -> Result<u64, String> {
+    tools::delete_files_batch(&file_paths)
+}
+
+#[tauri::command]
+fn package_mod(
+    mod_path: String,
+    output_dir: Option<String>,
+    include_backups: bool,
+) -> Result<String, String> {
+    tools::package_mod_zip(
+        Path::new(&mod_path),
+        output_dir.as_deref().map(Path::new),
+        include_backups,
+    )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -124,6 +148,9 @@ pub fn run() {
             apply_rabbitfx,
             reveal_in_explorer,
             open_external_url,
+            scan_unused_assets,
+            delete_unused_assets,
+            package_mod,
         ])
         .run(tauri::generate_context!())
         .expect("error while running modctl tauri application");

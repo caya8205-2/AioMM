@@ -3,6 +3,7 @@ import type {
   DetectedFolder,
   DryRunDto,
   KeyConflict,
+  ModCleanScanDto,
   ModEntry,
   Preset,
   RabbitFxAnalysisDto,
@@ -587,5 +588,52 @@ export const api = {
       return;
     }
     return invoke<void>('open_external_url', { url });
+  },
+
+  async scanUnusedAssets(modPath: string): Promise<ModCleanScanDto> {
+    if (!IS_TAURI) {
+      return {
+        modName: 'Sample Mod',
+        totalScannedFiles: 8,
+        unusedAssets: [
+          {
+            relPath: 'Textures/old_unreferenced_texture.dds',
+            absPath: `${modPath}/Textures/old_unreferenced_texture.dds`,
+            fileSizeBytes: 4194304,
+            extension: 'dds',
+          },
+          {
+            relPath: 'source_files/character_model.psd',
+            absPath: `${modPath}/source_files/character_model.psd`,
+            fileSizeBytes: 25165824,
+            extension: 'psd',
+          },
+        ],
+        reclaimableBytes: 29360128,
+      };
+    }
+    return invoke<ModCleanScanDto>('scan_unused_assets', { modPath });
+  },
+
+  async deleteUnusedAssets(filePaths: string[]): Promise<number> {
+    if (!IS_TAURI) {
+      return 29360128;
+    }
+    return invoke<number>('delete_unused_assets', { filePaths });
+  },
+
+  async packageMod(
+    modPath: string,
+    outputDir: string | null = null,
+    includeBackups = false,
+  ): Promise<string> {
+    if (!IS_TAURI) {
+      return `${modPath}.zip`;
+    }
+    return invoke<string>('package_mod', {
+      modPath,
+      outputDir,
+      includeBackups,
+    });
   },
 };

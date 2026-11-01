@@ -4,6 +4,7 @@ import { api, IS_TAURI, resolveModImageUrl } from '../lib/api';
 import type {
   DryRunDto,
   IniFileEntry,
+  ModCleanScanDto,
   ModEntry,
   Preset,
   RabbitFxAnalysisDto,
@@ -70,6 +71,11 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
   const [lightmapRes, setLightmapRes] = useState('');
   const [normalmapRes, setNormalmapRes] = useState('');
   const [glowmapRes, setGlowmapRes] = useState('');
+
+  const [cleanScan, setCleanScan] = useState<ModCleanScanDto | null>(null);
+  const [cleanLoading, setCleanLoading] = useState(false);
+  const [selectedUnused, setSelectedUnused] = useState<Set<string>>(new Set());
+  const [packaging, setPackaging] = useState(false);
 
   useEffect(() => {
     const exists = mod.iniFiles.some((f) => f.relName === selectedRelName);
@@ -361,6 +367,54 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
       );
     } finally {
       setBusyAction(null);
+    }
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function handleScanUnused() {
+    setCleanLoading(true);
+    try {
+      const res = await api.scanUnusedAssets(mod.path);
+      setCleanScan(res);
+      setSelectedUnused(new Set(res.unusedAssets.map((u) => u.absPath)));
+    } catch (err) {
+      onNotify(
+        err instanceof Error ? err.message : 'Failed to scan unused assets.',
+      );
+    } finally {
+      setCleanLoading(false);
+    }
+  }
+
+  async function handleDeleteUnused() {
+    if (selectedUnused.size === 0) return;
+    try {
+      const freed = await api.deleteUnusedAssets(Array.from(selectedUnused));
+      onNotify(`Freed ${formatBytes(freed)} of disk space.`);
+      await handleScanUnused();
+    } catch (err) {
+      onNotify(
+        err instanceof Error ? err.message : 'Failed to delete selected assets.',
+      );
+    }
+  }
+
+  async function handleExportZip() {
+    setPackaging(true);
+    try {
+      const zipPath = await api.packageMod(mod.path, null, false);
+      onNotify(`Packaged mod to ${zipPath}`);
+    } catch (err) {
+      onNotify(
+        err instanceof Error ? err.message : 'Failed to package mod into zip.',
+      );
+    } finally {
+      setPackaging(false);
     }
   }
 
@@ -1181,6 +1235,143 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
             </div>
           </section>
         )}
+
+        {/* Mod Packaging & Export */}
+        <section className="flex flex-col gap-2">
+          <h3 className="text-[13px] font-medium text-ink-charcoal">
+            Package & Backup
+          </h3>
+          <div className="flex flex-col gap-2 rounded-md border border-hairline bg-surface-card p-3">
+            <p className="text-[12px] leading-relaxed text-ink-body">
+              Exports the active mod setup to a clean .zip package on your Desktop.
+            </p>
+            <button
+              type="button"
+              disabled={packaging}
+              onClick={() => void handleExportZip()}
+              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-hairline bg-surface-elevated px-3 text-[13px] font-medium text-ink-bright hover:border-hairline-strong disabled:opacity-50 sm:min-h-[36px]"
+            >
+              <Icon icon={Icons.folder} size={15} className="text-ink-mute" />
+              <span>{packaging ? 'Creating Package...' : 'Export Mod Package (.zip)'}</span>
+            </button>
+          </div>
+        </section>
+
+        {/* Unused Asset Cleaner */}
+        <section className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[13px] font-medium text-ink-charcoal">
+              SSD Cleaner (Unreferenced Assets)
+            </h3>
+            {cleanScan && cleanScan.unusedAssets.length > 0 && (
+              <span className="rounded-xs border border-status-red/30 bg-status-red-soft px-1.5 py-0.5 text-[11px] font-medium text-status-red">
+                {formatBytes(cleanScan.reclaimableBytes)} reclaimable
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2.5 rounded-md border border-hairline bg-surface-card p-3">
+            <p className="text-[12px] leading-relaxed text-ink-body">
+              Detects texture files and models left behind that are never called in any .ini file.
+            </p>
+
+            {!cleanScan ? (
+              <button
+                type="button"
+                disabled={cleanLoading}
+                onClick={() => void handleScanUnused()}
+                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-hairline bg-surface-elevated px-3 text-[13px] font-medium text-ink-bright hover:border-hairline-strong disabled:opacity-50 sm:min-h-[36px]"
+              >
+                <Icon
+                  icon={Icons.refresh}
+                  size={14}
+                  className={clsx('text-ink-mute', cleanLoading && 'animate-spin')}
+                />
+                <span>{cleanLoading ? 'Scanning files...' : 'Scan Unused Files'}</span>
+              </button>
+            ) : cleanScan.unusedAssets.length === 0 ? (
+              <div className="flex items-center gap-2 text-[12px] text-status-green">
+                <Icon icon={Icons.check} size={15} />
+                <span>Clean! All asset files in this mod are referenced.</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2 border-b border-hairline pb-1.5 text-[11px] text-ink-mute">
+                  <span>{cleanScan.unusedAssets.length} unreferenced files</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedUnused.size === cleanScan.unusedAssets.length) {
+                        setSelectedUnused(new Set());
+                      } else {
+                        setSelectedUnused(
+                          new Set(cleanScan.unusedAssets.map((u) => u.absPath)),
+                        );
+                      }
+                    }}
+                    className="hover:text-ink-bright"
+                  >
+                    {selectedUnused.size === cleanScan.unusedAssets.length
+                      ? 'Deselect All'
+                      : 'Select All'}
+                  </button>
+                </div>
+
+                <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-hairline bg-canvas p-2">
+                  {cleanScan.unusedAssets.map((asset) => {
+                    const isChecked = selectedUnused.has(asset.absPath);
+                    return (
+                      <label
+                        key={asset.absPath}
+                        className="flex cursor-pointer items-center justify-between gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-surface-elevated"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const next = new Set(selectedUnused);
+                              if (e.target.checked) next.add(asset.absPath);
+                              else next.delete(asset.absPath);
+                              setSelectedUnused(next);
+                            }}
+                            className="rounded border-hairline bg-surface-elevated text-ink-bright"
+                          />
+                          <span className="truncate font-mono text-ink-body" title={asset.relPath}>
+                            {asset.relPath}
+                          </span>
+                        </div>
+                        <span className="shrink-0 font-mono text-ink-mute">
+                          {formatBytes(asset.fileSizeBytes)}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={selectedUnused.size === 0}
+                    onClick={() => void handleDeleteUnused()}
+                    className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-md border border-status-red/40 bg-status-red-soft px-3 text-[12px] font-medium text-status-red hover:bg-status-red/20 disabled:opacity-50 sm:min-h-[32px]"
+                  >
+                    <Icon icon={Icons.trash} size={14} />
+                    <span>Delete Selected ({selectedUnused.size})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleScanUnused()}
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-hairline bg-surface-elevated px-2.5 text-[12px] text-ink-mute hover:text-ink-bright sm:min-h-[32px]"
+                    title="Rescan"
+                  >
+                    <Icon icon={Icons.refresh} size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
 
         {showF10Hint && (
           <div className="rounded-md border border-hairline bg-surface-elevated px-3 py-2.5 text-[12px] leading-relaxed text-ink-body">

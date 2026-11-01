@@ -114,3 +114,17 @@ export interface RabbitFxApplyRequest {
   normalmapResource: string | null;
   glowmapResource: string | null;
 }
+
+export interface UnusedAssetInfo {
+  relPath: string;
+  absPath: string;
+  fileSizeBytes: number;
+  extension: string;
+}
+
+export interface ModCleanScanDto {
+  modName: string;
+  totalScannedFiles: number;
+  unusedAssets: UnusedAssetInfo[];
+  reclaimableBytes: number;
+}
