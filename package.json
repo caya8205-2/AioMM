@@ -1,6 +1,8 @@
 {
   "name": "aiomm",
   "version": "0.1.0",
+  "description": "All in one mod manager (AIOMM) for 3DMigoto and XXMI",
+  "author": "Caya8205",
   "private": true,
   "type": "module",
   "scripts": {

@@ -7,6 +7,7 @@ import type { DetectedFolder, ModEntry, Preset } from '../types';
 import { Icon, Icons } from './Icon';
 import { Keycap } from './Keycap';
 import { ModInspector } from './ModInspector';
+import { PaginationBar } from './PaginationBar';
 
 export interface ModsViewProps {
   root: string | null;
@@ -103,6 +104,8 @@ export function ModsView(props: ModsViewProps): JSX.Element {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ModFilter>('all');
   const [sortBy, setSortBy] = useState<ModSort>('name-asc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [installingZip, setInstallingZip] = useState(false);
@@ -199,6 +202,18 @@ export function ModsView(props: ModsViewProps): JSX.Element {
 
     return result;
   }, [mods, filter, query, sortBy]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, filter, sortBy, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredMods.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, filteredMods.length);
+  const paginatedMods = useMemo(() => {
+    return filteredMods.slice(startIndex, endIndex);
+  }, [filteredMods, startIndex, endIndex]);
 
   const selectedMod = useMemo(
     () => mods.find((m) => m.id === selectedModId) ?? null,
@@ -618,20 +633,36 @@ export function ModsView(props: ModsViewProps): JSX.Element {
               })}
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <span className="text-[12px] text-ink-mute">Sort:</span>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as ModSort)}
-                aria-label="Sort mods"
-                className="min-h-[44px] rounded-md border border-hairline bg-surface-elevated px-2 py-1 text-[12px] font-medium text-ink-bright focus:border-hairline-strong sm:min-h-[32px]"
-              >
-                <option value="name-asc">Name (A to Z)</option>
-                <option value="name-desc">Name (Z to A)</option>
-                <option value="status">Status (Active first)</option>
-                <option value="keys-count">Most Hotkeys</option>
-                <option value="category">Character / Category</option>
-              </select>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] text-ink-mute">Sort:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as ModSort)}
+                  aria-label="Sort mods"
+                  className="min-h-[44px] rounded-md border border-hairline bg-surface-elevated px-2 py-1 text-[12px] font-medium text-ink-bright focus:border-hairline-strong sm:min-h-[32px]"
+                >
+                  <option value="name-asc">Name (A to Z)</option>
+                  <option value="name-desc">Name (Z to A)</option>
+                  <option value="status">Status (Active first)</option>
+                  <option value="keys-count">Most Hotkeys</option>
+                  <option value="category">Character / Category</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] text-ink-mute">Per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  aria-label="Items per page"
+                  className="min-h-[44px] rounded-md border border-hairline bg-surface-elevated px-2 py-1 text-[12px] font-medium text-ink-bright focus:border-hairline-strong sm:min-h-[32px]"
+                >
+                  <option value="15">15</option>
+                  <option value="30">30</option>
+                  <option value="50">50</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -660,15 +691,16 @@ export function ModsView(props: ModsViewProps): JSX.Element {
               </button>
             </div>
           ) : (
-            <div
-              className={clsx(
-                'grid gap-3',
-                selectedMod
-                  ? 'grid-cols-1 xl:grid-cols-2'
-                  : 'grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3',
-              )}
-            >
-              {filteredMods.map((mod) => {
+            <>
+              <div
+                className={clsx(
+                  'grid gap-3',
+                  selectedMod
+                    ? 'grid-cols-1 xl:grid-cols-2'
+                    : 'grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3',
+                )}
+              >
+              {paginatedMods.map((mod) => {
                 const isSelected = selectedModId === mod.id;
                 const activeIniCount = mod.iniFiles.filter(
                   (f) => !f.isDisabled,
@@ -823,7 +855,19 @@ export function ModsView(props: ModsViewProps): JSX.Element {
                 );
               })}
             </div>
-          )}
+
+            {/* Pagination Controls */}
+            <PaginationBar
+              currentPage={safePage}
+              totalPages={totalPages}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              totalItems={filteredMods.length}
+              itemLabel="mods"
+              onPageChange={(p) => setCurrentPage(p)}
+            />
+          </>
+        )}
         </div>
       </div>
 

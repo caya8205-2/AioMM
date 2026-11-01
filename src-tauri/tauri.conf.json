@@ -33,6 +33,10 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "Caya8205",
+    "copyright": "Copyright © 2026 Caya8205",
+    "shortDescription": "All in one mod manager",
+    "longDescription": "All in one mod manager (AIOMM) for 3DMigoto and XXMI",
     "targets": "all",
     "icon": [
       "icons/32x32.png",
