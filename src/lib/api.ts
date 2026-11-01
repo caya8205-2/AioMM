@@ -40,6 +40,20 @@ export async function pickModsDirectory(): Promise<string | null> {
   return typeof selected === 'string' ? selected : null;
 }
 
+export async function pickModZipFile(): Promise<string | null> {
+  if (!IS_TAURI) {
+    return 'C:\\Downloads\\SampleMod.zip';
+  }
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title: 'Select Mod .zip Archive',
+    filters: [{ name: 'Zip Archive', extensions: ['zip'] }],
+  });
+  return typeof selected === 'string' ? selected : null;
+}
+
 // Browser-only preview state used strictly when running outside Tauri during layout verification.
 interface PreviewIniState {
   original: string;
@@ -339,9 +353,11 @@ function buildPreviewSnapshot(root: string): WorkspaceSnapshot {
       enabled,
       previewPath: null,
       iniFiles,
-      keybinds: enabled ? keybinds : [],
+      keybinds,
       appliedPresetIds,
       hasAnyBackup: iniFiles.some((f) => f.hasBackup),
+      missingAssets: [],
+      meshConflicts: [],
     };
   });
 
@@ -636,4 +652,23 @@ export const api = {
       includeBackups,
     });
   },
+
+  async installModZip(zipPath: string, modsRoot: string): Promise<string> {
+    if (!IS_TAURI) {
+      return `${modsRoot}\\InstalledMod`;
+    }
+    return invoke<string>('install_mod_zip', { zipPath, modsRoot });
+  },
+
+  async batchToggleMods(modsRoot: string, enableAll: boolean): Promise<number> {
+    if (!IS_TAURI) {
+      for (const k of Object.keys(previewModEnabled)) {
+        previewModEnabled[k] = enableAll;
+      }
+      return Object.keys(previewModEnabled).length;
+    }
+    return invoke<number>('batch_toggle_mods', { modsRoot, enableAll });
+  },
+
+  pickModZipFile,
 };

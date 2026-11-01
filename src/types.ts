@@ -54,6 +54,8 @@ export interface ModEntry {
   keybinds: KeyBind[];
   appliedPresetIds: string[];
   hasAnyBackup: boolean;
+  missingAssets: string[];
+  meshConflicts: string[];
 }
 
 export interface ConflictMember {

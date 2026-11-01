@@ -292,6 +292,121 @@ pub fn package_mod_zip(
     Ok(target_zip.to_string_lossy().to_string())
 }
 
+pub fn install_mod_from_zip(zip_path: &Path, mods_root: &Path) -> Result<String, String> {
+    if !zip_path.is_file() {
+        return Err(format!("'{}' is not a valid file.", zip_path.display()));
+    }
+    if !mods_root.is_dir() {
+        return Err(format!("'{}' is not a valid directory.", mods_root.display()));
+    }
+
+    let zip_stem = zip_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Installed_Mod")
+        .replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_");
+
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let temp_extract = std::env::temp_dir().join(format!("modctl_unpack_{zip_stem}_{millis}"));
+    if temp_extract.exists() {
+        let _ = fs::remove_dir_all(&temp_extract);
+    }
+    fs::create_dir_all(&temp_extract)
+        .map_err(|e| format!("Failed to create extract folder: {e}"))?;
+
+    let ps_cmd = format!(
+        "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+        zip_path.display(),
+        temp_extract.display()
+    );
+
+    let status = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &ps_cmd])
+        .status()
+        .map_err(|e| {
+            let _ = fs::remove_dir_all(&temp_extract);
+            format!("Failed to run PowerShell Expand-Archive: {e}")
+        })?;
+
+    if !status.success() {
+        let _ = fs::remove_dir_all(&temp_extract);
+        return Err("Failed to extract zip archive.".into());
+    }
+
+    fn find_ini_files(dir: &Path, out: &mut Vec<PathBuf>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    find_ini_files(&p, out);
+                } else if p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ini")) {
+                    out.push(p);
+                }
+            }
+        }
+    }
+
+    let mut inis = Vec::new();
+    find_ini_files(&temp_extract, &mut inis);
+    if inis.is_empty() {
+        let _ = fs::remove_dir_all(&temp_extract);
+        return Err("No .ini mod files found inside this zip archive.".into());
+    }
+
+    let top_entries: Vec<PathBuf> = fs::read_dir(&temp_extract)
+        .map(|entries| entries.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+
+    let target_folder_name = if top_entries.len() == 1 && top_entries[0].is_dir() {
+        top_entries[0]
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&zip_stem)
+            .to_string()
+    } else {
+        zip_stem.clone()
+    };
+
+    let mut unique_target = mods_root.join(&target_folder_name);
+    let mut counter = 1;
+    while unique_target.exists() {
+        unique_target = mods_root.join(format!("{target_folder_name} ({counter})"));
+        counter += 1;
+    }
+
+    fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+        fs::create_dir_all(dst)?;
+        for entry in fs::read_dir(src)? {
+            let entry = entry?;
+            let path = entry.path();
+            let target = dst.join(entry.file_name());
+            if path.is_dir() {
+                copy_recursive(&path, &target)?;
+            } else if path.is_file() {
+                fs::copy(&path, &target)?;
+            }
+        }
+        Ok(())
+    }
+
+    let source_dir_to_move = if top_entries.len() == 1 && top_entries[0].is_dir() {
+        &top_entries[0]
+    } else {
+        &temp_extract
+    };
+
+    if let Err(e) = copy_recursive(source_dir_to_move, &unique_target) {
+        let _ = fs::remove_dir_all(&temp_extract);
+        return Err(format!("Failed to install mod files: {e}"));
+    }
+
+    let _ = fs::remove_dir_all(&temp_extract);
+    Ok(unique_target.to_string_lossy().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,6 +455,13 @@ mod tests {
         let zip_path = package_mod_zip(&mod_dir, Some(&temp_dir), false).unwrap();
         assert!(Path::new(&zip_path).exists());
         assert!(zip_path.ends_with("MyCharacterMod.zip"));
+
+        let install_root = temp_dir.join("TargetMods");
+        fs::create_dir_all(&install_root).unwrap();
+
+        let installed_dir = install_mod_from_zip(Path::new(&zip_path), &install_root).unwrap();
+        assert!(Path::new(&installed_dir).exists());
+        assert!(Path::new(&installed_dir).join("mod.ini").exists());
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

@@ -511,6 +511,41 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
           </button>
         </div>
 
+        {mod.meshConflicts.length > 0 && mod.enabled && (
+          <div className="rounded-md border border-status-red/40 bg-status-red-soft p-3 text-xs text-status-red">
+            <div className="flex items-center gap-2 font-medium">
+              <Icon icon={Icons.alert} size={15} />
+              <span>Active Character / Mesh Clash Detected</span>
+            </div>
+            <p className="mt-1 leading-relaxed text-ink-body">
+              This mod overrides the same character mesh as:{' '}
+              <span className="font-semibold text-ink-bright">
+                {mod.meshConflicts.join(', ')}
+              </span>
+              . Running multiple active mods for the same character can cause overlapping geometry in-game.
+            </p>
+          </div>
+        )}
+
+        {mod.missingAssets.length > 0 && (
+          <div className="rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-xs text-amber-300">
+            <div className="flex items-center gap-2 font-medium">
+              <Icon icon={Icons.info} size={15} />
+              <span>Missing Referenced Files ({mod.missingAssets.length})</span>
+            </div>
+            <p className="mt-1 leading-relaxed text-ink-body">
+              The following files are called in your .ini configuration but are missing on disk:
+            </p>
+            <ul className="mt-1.5 list-inside list-disc space-y-0.5 font-mono text-[11px] text-amber-200/90">
+              {mod.missingAssets.map((asset, i) => (
+                <li key={i} className="truncate" title={asset}>
+                  {asset}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <section className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-[13px] font-medium text-ink-charcoal">

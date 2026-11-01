@@ -47,6 +47,8 @@ pub struct ModEntry {
     pub keybinds: Vec<KeyBind>,
     pub applied_preset_ids: Vec<String>,
     pub has_any_backup: bool,
+    pub missing_assets: Vec<String>,
+    pub mesh_conflicts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -367,6 +369,7 @@ pub fn scan_workspace(root: &Path) -> Result<WorkspaceSnapshot, String> {
     }
 
     let mut mods: Vec<ModEntry> = Vec::with_capacity(mod_dirs.len());
+    let mut mod_hashes: Vec<HashSet<String>> = Vec::with_capacity(mod_dirs.len());
 
     for mod_dir in mod_dirs {
         let mut ini_files = Vec::new();
@@ -433,6 +436,8 @@ pub fn scan_workspace(root: &Path) -> Result<WorkspaceSnapshot, String> {
 
         let mut keybinds = Vec::new();
         let mut applied_preset_ids = Vec::new();
+        let mut missing_assets = Vec::new();
+        let mut component_hashes = HashSet::new();
 
         for ini_entry in &ini_files {
             if ini_entry.is_disabled {
@@ -441,6 +446,47 @@ pub fn scan_workspace(root: &Path) -> Result<WorkspaceSnapshot, String> {
             let Ok(raw) = ini::read_ini_lossy(Path::new(&ini_entry.path)) else {
                 continue;
             };
+
+            let ini_dir = Path::new(&ini_entry.path)
+                .parent()
+                .unwrap_or(&mod_dir);
+
+            for line in raw.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with(';') {
+                    continue;
+                }
+                if let Some((lhs, rhs)) = trimmed.split_once('=') {
+                    let lhs_clean = lhs.trim();
+                    if lhs_clean.eq_ignore_ascii_case("filename") {
+                        let fn_clean = rhs
+                            .trim()
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .replace('/', "\\");
+                        if !fn_clean.is_empty() {
+                            let p1 = ini_dir.join(&fn_clean);
+                            let p2 = mod_dir.join(&fn_clean);
+                            if !p1.exists() && !p2.exists() {
+                                let note = format!("{} ({})", fn_clean, ini_entry.rel_name);
+                                if !missing_assets.contains(&note) {
+                                    missing_assets.push(note);
+                                }
+                            }
+                        }
+                    } else if lhs_clean.eq_ignore_ascii_case("hash") {
+                        let h = rhs
+                            .trim()
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .to_lowercase();
+                        if !h.is_empty() {
+                            component_hashes.insert(h);
+                        }
+                    }
+                }
+            }
+
             if enabled {
                 let mut binds = ini::extract_keybinds(&raw, &ini_entry.path, &ini_entry.rel_name);
                 keybinds.append(&mut binds);
@@ -470,7 +516,40 @@ pub fn scan_workspace(root: &Path) -> Result<WorkspaceSnapshot, String> {
             keybinds,
             applied_preset_ids,
             has_any_backup,
+            missing_assets,
+            mesh_conflicts: Vec::new(),
         });
+        mod_hashes.push(component_hashes);
+    }
+
+    // Detect mesh / component hash clashes between active mods
+    let n = mods.len();
+    for i in 0..n {
+        if !mods[i].enabled {
+            continue;
+        }
+        for j in (i + 1)..n {
+            if !mods[j].enabled {
+                continue;
+            }
+
+            let shared = mod_hashes[i].intersection(&mod_hashes[j]).count();
+            let same_category = match (&mods[i].category, &mods[j].category) {
+                (Some(ca), Some(cb)) if !ca.is_empty() && ca.eq_ignore_ascii_case(cb) => true,
+                _ => false,
+            };
+
+            if shared > 0 || same_category {
+                let name_j = mods[j].display_name.clone();
+                let name_i = mods[i].display_name.clone();
+                if !mods[i].mesh_conflicts.contains(&name_j) {
+                    mods[i].mesh_conflicts.push(name_j);
+                }
+                if !mods[j].mesh_conflicts.contains(&name_i) {
+                    mods[j].mesh_conflicts.push(name_i);
+                }
+            }
+        }
     }
 
     let mut id_counts: BTreeMap<String, usize> = BTreeMap::new();
@@ -542,6 +621,35 @@ pub fn toggle_mod_folder(mod_path: &Path) -> Result<String, String> {
     })?;
 
     Ok(target_path.to_string_lossy().to_string())
+}
+
+pub fn batch_toggle_all(root: &Path, enable_all: bool) -> Result<usize, String> {
+    if !root.is_dir() {
+        return Err(format!("'{}' is not a directory.", root.display()));
+    }
+    let mut mod_dirs = Vec::new();
+    collect_mod_dirs(root, 0, &mut mod_dirs);
+    let mut count = 0;
+    for dir in mod_dirs {
+        let name = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let is_disabled = is_disabled_name(name);
+        if enable_all && is_disabled {
+            let clean = strip_disabled_prefix(name);
+            let target = dir.with_file_name(clean);
+            if !target.exists() && fs::rename(&dir, &target).is_ok() {
+                count += 1;
+            }
+        } else if !enable_all && !is_disabled {
+            let target = dir.with_file_name(format!("DISABLED_{name}"));
+            if !target.exists() && fs::rename(&dir, &target).is_ok() {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
 }
 
 #[cfg(test)]

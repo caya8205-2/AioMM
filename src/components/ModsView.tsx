@@ -30,6 +30,8 @@ type ModFilter =
   | 'active'
   | 'disabled'
   | 'conflicts'
+  | 'clashes'
+  | 'missing'
   | 'patched'
   | 'has-backup';
 
@@ -102,18 +104,24 @@ export function ModsView(props: ModsViewProps): JSX.Element {
   const [filter, setFilter] = useState<ModFilter>('all');
   const [sortBy, setSortBy] = useState<ModSort>('name-asc');
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [installingZip, setInstallingZip] = useState(false);
 
   const counts = useMemo(() => {
     let active = 0;
     let disabled = 0;
     let patched = 0;
     let conflicts = 0;
+    let clashes = 0;
+    let missing = 0;
     let hasBackup = 0;
     for (const m of mods) {
       if (m.enabled) active++;
       else disabled++;
       if (m.appliedPresetIds.length > 0) patched++;
       if (modHasInternalConflict(m)) conflicts++;
+      if (m.meshConflicts.length > 0 && m.enabled) clashes++;
+      if (m.missingAssets.length > 0) missing++;
       if (m.hasAnyBackup) hasBackup++;
     }
     return {
@@ -122,6 +130,8 @@ export function ModsView(props: ModsViewProps): JSX.Element {
       disabled,
       patched,
       conflicts,
+      clashes,
+      missing,
       hasBackup,
     };
   }, [mods]);
@@ -134,6 +144,13 @@ export function ModsView(props: ModsViewProps): JSX.Element {
       if (filter === 'patched' && mod.appliedPresetIds.length === 0)
         return false;
       if (filter === 'conflicts' && !modHasInternalConflict(mod))
+        return false;
+      if (
+        filter === 'clashes' &&
+        (mod.meshConflicts.length === 0 || !mod.enabled)
+      )
+        return false;
+      if (filter === 'missing' && mod.missingAssets.length === 0)
         return false;
       if (filter === 'has-backup' && !mod.hasAnyBackup)
         return false;
@@ -208,6 +225,60 @@ export function ModsView(props: ModsViewProps): JSX.Element {
       onNotify(
         err instanceof Error ? err.message : 'Could not open folder in Explorer.',
       );
+    }
+  }
+
+  async function handleInstallZipPath(zipPath: string) {
+    if (!root) return;
+    setInstallingZip(true);
+    try {
+      const installed = await api.installModZip(zipPath, root);
+      const folderName = installed.split(/[\\/]/).pop() || 'mod';
+      onNotify(`Installed mod into ${folderName}!`);
+      await onRefresh();
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Failed to install zip mod.');
+    } finally {
+      setInstallingZip(false);
+    }
+  }
+
+  async function handlePickAndInstallZip() {
+    if (!root || installingZip) return;
+    try {
+      const zipPath = await api.pickModZipFile();
+      if (zipPath) {
+        await handleInstallZipPath(zipPath);
+      }
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Could not open zip file.');
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    if (!root) return;
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    const filePath = (file as unknown as { path?: string }).path;
+    if (filePath && filePath.toLowerCase().endsWith('.zip')) {
+      void handleInstallZipPath(filePath);
+    } else {
+      onNotify('Only .zip mod archive files can be dropped to install.');
+    }
+  }
+
+  async function handleBatchToggle(enableAll: boolean) {
+    if (!root || loading) return;
+    const actionLabel = enableAll ? 'enable all mods' : 'disable all mods (Panic)';
+    if (!window.confirm(`Are you sure you want to ${actionLabel}?`)) return;
+    try {
+      const count = await api.batchToggleMods(root, enableAll);
+      onNotify(`${enableAll ? 'Enabled' : 'Disabled'} ${count} mods.`);
+      await onRefresh();
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Failed to batch toggle mods.');
     }
   }
 
@@ -361,10 +432,35 @@ export function ModsView(props: ModsViewProps): JSX.Element {
     );
   }
 
-  const filterTabs: Array<{ id: ModFilter; label: string; count: number }> = [
+  const filterTabs: Array<{
+    id: ModFilter;
+    label: string;
+    count: number;
+    tone?: 'conflict' | 'warning';
+  }> = [
     { id: 'all', label: 'All', count: counts.all },
     { id: 'active', label: 'Active', count: counts.active },
     { id: 'disabled', label: 'Disabled', count: counts.disabled },
+    ...(counts.clashes > 0
+      ? [
+          {
+            id: 'clashes' as const,
+            label: 'Mesh Clashes',
+            count: counts.clashes,
+            tone: 'conflict' as const,
+          },
+        ]
+      : []),
+    ...(counts.missing > 0
+      ? [
+          {
+            id: 'missing' as const,
+            label: 'Missing Files',
+            count: counts.missing,
+            tone: 'warning' as const,
+          },
+        ]
+      : []),
     ...(counts.conflicts > 0
       ? [{ id: 'conflicts' as const, label: 'Conflicts', count: counts.conflicts }]
       : []),
@@ -375,7 +471,32 @@ export function ModsView(props: ModsViewProps): JSX.Element {
   ];
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-canvas">
+    <div
+      className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-canvas"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDraggingOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setIsDraggingOver(false);
+        }
+      }}
+      onDrop={handleDrop}
+    >
+      {isDraggingOver && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-white/60 bg-black/80 backdrop-blur-xs">
+          <Icon
+            icon={Icons.folderOpen}
+            size={40}
+            className="animate-bounce text-white"
+          />
+          <p className="text-base font-medium text-white">
+            Drop .zip mod archive here to install
+          </p>
+        </div>
+      )}
+
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex shrink-0 flex-col gap-3 border-b border-hairline bg-canvas px-4 py-4 sm:px-6">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -388,12 +509,50 @@ export function ModsView(props: ModsViewProps): JSX.Element {
                 {counts.all === 1 ? 'mod' : 'mods'}
               </p>
             </div>
-            {loading && (
-              <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-mute">
-                <Icon icon={Icons.refresh} size={14} className="animate-spin" />
-                <span>Refreshing...</span>
-              </span>
-            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              {loading && (
+                <span className="mr-2 inline-flex items-center gap-1.5 text-[12px] text-ink-mute">
+                  <Icon icon={Icons.refresh} size={14} className="animate-spin" />
+                  <span>Refreshing...</span>
+                </span>
+              )}
+
+              <button
+                type="button"
+                disabled={installingZip}
+                onClick={() => void handlePickAndInstallZip()}
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-hairline bg-surface-elevated px-3 text-[12px] font-medium text-ink-bright transition-colors hover:border-hairline-strong sm:min-h-[32px]"
+                title="Install a mod .zip file directly into Mods folder"
+              >
+                <Icon icon={Icons.add} size={14} className="text-ink-mute" />
+                <span>{installingZip ? 'Installing...' : 'Install (.zip)'}</span>
+              </button>
+
+              {counts.active > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleBatchToggle(false)}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-status-red/40 bg-status-red-soft px-3 text-[12px] font-medium text-status-red transition-colors hover:bg-status-red/20 sm:min-h-[32px]"
+                  title="Disable all active mods at once (Panic Button for new patches)"
+                >
+                  <Icon icon={Icons.alert} size={13} />
+                  <span>Disable All</span>
+                </button>
+              )}
+
+              {counts.disabled > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleBatchToggle(true)}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-hairline bg-surface-elevated px-3 text-[12px] font-medium text-ink-body transition-colors hover:border-hairline-strong hover:text-ink-bright sm:min-h-[32px]"
+                  title="Enable all mods at once"
+                >
+                  <Icon icon={Icons.check} size={13} className="text-ink-mute" />
+                  <span>Enable All</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex h-[44px] items-center gap-2.5 rounded-md border border-hairline bg-surface-elevated px-3.5 transition-colors focus-within:border-hairline-strong focus-within:ring-1 focus-within:ring-white/30">
@@ -576,6 +735,22 @@ export function ModsView(props: ModsViewProps): JSX.Element {
                           {duplicateKeys.size > 0 && (
                             <span className="shrink-0 rounded-xs border border-status-red/30 bg-status-red-soft px-1.5 py-0.5 text-[11px] font-medium text-status-red">
                               Key conflict
+                            </span>
+                          )}
+                          {mod.meshConflicts.length > 0 && mod.enabled && (
+                            <span
+                              className="shrink-0 rounded-xs border border-status-red/40 bg-status-red-soft px-1.5 py-0.5 text-[11px] font-medium text-status-red"
+                              title={`Clashes with: ${mod.meshConflicts.join(', ')}`}
+                            >
+                              Mesh clash
+                            </span>
+                          )}
+                          {mod.missingAssets.length > 0 && (
+                            <span
+                              className="shrink-0 rounded-xs border border-amber-500/35 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-300"
+                              title={`Missing ${mod.missingAssets.length} asset files`}
+                            >
+                              Missing file ({mod.missingAssets.length})
                             </span>
                           )}
                           {!mod.enabled && (

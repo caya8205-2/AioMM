@@ -130,6 +130,16 @@ fn package_mod(
     )
 }
 
+#[tauri::command]
+fn install_mod_zip(zip_path: String, mods_root: String) -> Result<String, String> {
+    tools::install_mod_from_zip(Path::new(&zip_path), Path::new(&mods_root))
+}
+
+#[tauri::command]
+fn batch_toggle_mods(mods_root: String, enable_all: bool) -> Result<usize, String> {
+    scanner::batch_toggle_all(Path::new(&mods_root), enable_all)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -151,6 +161,8 @@ pub fn run() {
             scan_unused_assets,
             delete_unused_assets,
             package_mod,
+            install_mod_zip,
+            batch_toggle_mods,
         ])
         .run(tauri::generate_context!())
         .expect("error while running modctl tauri application");
