@@ -185,7 +185,7 @@ pub fn strip_disabled_prefix(name: &str) -> String {
     }
 }
 
-fn is_ini_file(path: &Path) -> bool {
+pub(crate) fn is_ini_file(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
@@ -197,7 +197,7 @@ fn is_ini_file(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("ini"))
 }
 
-fn has_direct_ini(dir: &Path) -> bool {
+pub(crate) fn has_direct_ini(dir: &Path) -> bool {
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
@@ -206,7 +206,7 @@ fn has_direct_ini(dir: &Path) -> bool {
         .any(|e| e.file_type().is_ok_and(|ft| ft.is_file()) && is_ini_file(&e.path()))
 }
 
-fn collect_mod_dirs(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+pub(crate) fn collect_mod_dirs(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     if depth >= MAX_SCAN_DEPTH {
         return;
     }

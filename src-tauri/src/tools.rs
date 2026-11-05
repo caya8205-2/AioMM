@@ -22,6 +22,26 @@ pub struct ModCleanScanDto {
     pub reclaimable_bytes: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModUnusedGroupDto {
+    pub mod_name: String,
+    pub mod_path: String,
+    pub total_scanned_files: usize,
+    pub reclaimable_bytes: u64,
+    pub unused_assets: Vec<UnusedAssetInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AllModsCleanScanDto {
+    pub root_path: String,
+    pub total_mods_scanned: usize,
+    pub mods_with_unused: Vec<ModUnusedGroupDto>,
+    pub total_unused_files: usize,
+    pub total_reclaimable_bytes: u64,
+}
+
 fn normalize_slash(p: &str) -> String {
     p.replace('\\', "/").to_lowercase()
 }
@@ -142,8 +162,12 @@ pub fn scan_unused_assets_in_mod(mod_dir: &Path) -> Result<ModCleanScanDto, Stri
             .unwrap_or("")
             .to_lowercase();
 
-        // Never mark preview images, config ini files, or backups as unused
-        if ext == "ini" || file_name.ends_with(".bak") || is_preview_image(&file_name) {
+        // Never mark preview images, config ini files, backups, or quarantined files as unused
+        if ext == "ini"
+            || file_name.ends_with(".bak")
+            || file_name.ends_with(".aiomm_unused")
+            || is_preview_image(&file_name)
+        {
             continue;
         }
 
@@ -169,6 +193,46 @@ pub fn scan_unused_assets_in_mod(mod_dir: &Path) -> Result<ModCleanScanDto, Stri
     })
 }
 
+pub fn scan_all_unused_assets_in_root(root: &Path) -> Result<AllModsCleanScanDto, String> {
+    if !root.is_dir() {
+        return Err(format!("'{}' is not a directory.", root.display()));
+    }
+
+    let mut mod_dirs = Vec::new();
+    crate::scanner::collect_mod_dirs(root, 0, &mut mod_dirs);
+    if mod_dirs.is_empty() && crate::scanner::has_direct_ini(root) {
+        mod_dirs.push(root.to_path_buf());
+    }
+
+    let mut mods_with_unused = Vec::new();
+    let mut total_unused_files = 0;
+    let mut total_reclaimable_bytes = 0u64;
+
+    for dir in &mod_dirs {
+        if let Ok(scan) = scan_unused_assets_in_mod(dir) {
+            if !scan.unused_assets.is_empty() {
+                total_unused_files += scan.unused_assets.len();
+                total_reclaimable_bytes += scan.reclaimable_bytes;
+                mods_with_unused.push(ModUnusedGroupDto {
+                    mod_name: scan.mod_name,
+                    mod_path: dir.to_string_lossy().to_string(),
+                    total_scanned_files: scan.total_scanned_files,
+                    reclaimable_bytes: scan.reclaimable_bytes,
+                    unused_assets: scan.unused_assets,
+                });
+            }
+        }
+    }
+
+    Ok(AllModsCleanScanDto {
+        root_path: root.to_string_lossy().to_string(),
+        total_mods_scanned: mod_dirs.len(),
+        mods_with_unused,
+        total_unused_files,
+        total_reclaimable_bytes,
+    })
+}
+
 pub fn delete_files_batch(file_paths: &[String]) -> Result<u64, String> {
     let mut freed_bytes = 0u64;
     for fp in file_paths {
@@ -181,6 +245,136 @@ pub fn delete_files_batch(file_paths: &[String]) -> Result<u64, String> {
         }
     }
     Ok(freed_bytes)
+}
+
+pub fn quarantine_files_batch(file_paths: &[String]) -> Result<usize, String> {
+    let mut count = 0;
+    for fp in file_paths {
+        let p = Path::new(fp);
+        if p.is_file() {
+            let target_str = format!("{}.aiomm_unused", fp);
+            let target = Path::new(&target_str);
+            fs::rename(p, target).map_err(|e| format!("Failed to quarantine '{}': {e}", p.display()))?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+pub fn restore_quarantined_files_batch(file_paths: &[String]) -> Result<usize, String> {
+    let mut count = 0;
+    for fp in file_paths {
+        let p = Path::new(fp);
+        if p.is_file() {
+            let filename = p.file_name().unwrap_or_default().to_string_lossy();
+            if filename.ends_with(".aiomm_unused") {
+                let target_name = filename.trim_end_matches(".aiomm_unused");
+                let target = p.with_file_name(target_name);
+                fs::rename(p, target).map_err(|e| format!("Failed to restore '{}': {e}", p.display()))?;
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
+}
+
+pub fn restore_quarantined_files(root: &Path) -> Result<usize, String> {
+    if !root.is_dir() {
+        return Err(format!("'{}' is not a directory.", root.display()));
+    }
+    let mut count = 0;
+
+    fn walk_restore(dir: &Path, count: &mut usize) -> std::io::Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk_restore(&path, count)?;
+            } else if path.is_file() {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                if name.ends_with(".aiomm_unused") {
+                    let new_name = name.trim_end_matches(".aiomm_unused");
+                    let target = path.with_file_name(new_name);
+                    fs::rename(&path, target)?;
+                    *count += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    walk_restore(root, &mut count).map_err(|e| format!("Failed to restore quarantined files: {e}"))?;
+    Ok(count)
+}
+
+pub fn purge_quarantined_files(root: &Path) -> Result<u64, String> {
+    if !root.is_dir() {
+        return Err(format!("'{}' is not a directory.", root.display()));
+    }
+    let mut freed_bytes = 0u64;
+
+    fn walk_purge(dir: &Path, freed: &mut u64) -> std::io::Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk_purge(&path, freed)?;
+            } else if path.is_file() {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                if name.ends_with(".aiomm_unused") {
+                    if let Ok(meta) = fs::metadata(&path) {
+                        *freed += meta.len();
+                    }
+                    fs::remove_file(&path)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    walk_purge(root, &mut freed_bytes).map_err(|e| format!("Failed to purge quarantined files: {e}"))?;
+    Ok(freed_bytes)
+}
+
+pub fn scan_quarantined_files(root: &Path) -> Result<Vec<UnusedAssetInfo>, String> {
+    if !root.is_dir() {
+        return Err(format!("'{}' is not a directory.", root.display()));
+    }
+    let mut quarantined = Vec::new();
+
+    fn walk_scan(root: &Path, current: &Path, out: &mut Vec<UnusedAssetInfo>) {
+        let Ok(entries) = fs::read_dir(current) else { return; };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with('.') {
+                    walk_scan(root, &path, out);
+                }
+            } else if path.is_file() {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                if name.ends_with(".aiomm_unused") {
+                    let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string();
+                    let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                    let orig_name = name.trim_end_matches(".aiomm_unused");
+                    let ext = Path::new(orig_name)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    out.push(UnusedAssetInfo {
+                        rel_path: rel,
+                        abs_path: path.to_string_lossy().to_string(),
+                        file_size_bytes: size,
+                        extension: ext,
+                    });
+                }
+            }
+        }
+    }
+
+    walk_scan(root, root, &mut quarantined);
+    Ok(quarantined)
 }
 
 pub fn package_mod_zip(
@@ -407,6 +601,213 @@ pub fn install_mod_from_zip(zip_path: &Path, mods_root: &Path) -> Result<String,
     Ok(unique_target.to_string_lossy().to_string())
 }
 
+pub fn validate_file_or_folder_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("Name cannot be empty".to_string());
+    }
+    let forbidden = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    if trimmed.chars().any(|c| forbidden.contains(&c) || (c as u32) < 32) {
+        return Err("Name contains invalid characters (< > : \" / \\ | ? *)".to_string());
+    }
+    if trimmed.ends_with('.') || trimmed.ends_with(' ') {
+        return Err("Name cannot end with a period or space".to_string());
+    }
+    let upper = trimmed.to_uppercase();
+    let reserved = [
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    let stem = upper.split('.').next().unwrap_or(&upper);
+    if reserved.contains(&stem) {
+        return Err(format!("'{trimmed}' is a reserved Windows device name"));
+    }
+    Ok(trimmed.to_string())
+}
+
+pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
+    if !dst.exists() {
+        fs::create_dir_all(dst)?;
+    }
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        let target = dst.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_recursive(&path, &target)?;
+        } else if path.is_file() {
+            fs::copy(&path, &target)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn rename_fs_entry(target: &Path, new_name: &str) -> Result<PathBuf, String> {
+    if !target.exists() {
+        return Err(format!("Item not found: '{}'", target.display()));
+    }
+    let valid_name = validate_file_or_folder_name(new_name)?;
+    let parent = target.parent().ok_or_else(|| "Cannot rename root directory".to_string())?;
+    let new_path = parent.join(&valid_name);
+
+    if new_path == target {
+        return Ok(new_path);
+    }
+
+    if new_path.exists() {
+        let same_file = match (target.canonicalize(), new_path.canonicalize()) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        };
+        if same_file {
+            let temp_name = format!("{valid_name}_aiomm_case_tmp_{}", std::process::id());
+            let temp_path = parent.join(temp_name);
+            fs::rename(target, &temp_path)
+                .map_err(|e| format!("Failed during case rename step 1: {e}"))?;
+            fs::rename(&temp_path, &new_path)
+                .map_err(|e| format!("Failed during case rename step 2: {e}"))?;
+            return Ok(new_path);
+        } else {
+            return Err(format!("An item named '{valid_name}' already exists in this folder"));
+        }
+    }
+
+    fs::rename(target, &new_path).map_err(|e| format!("Failed to rename '{}': {e}", target.display()))?;
+    Ok(new_path)
+}
+
+pub fn create_subfolder(parent: &Path, folder_name: &str) -> Result<PathBuf, String> {
+    if !parent.exists() {
+        return Err(format!("Parent directory does not exist: '{}'", parent.display()));
+    }
+    if !parent.is_dir() {
+        return Err(format!("Parent path is not a folder: '{}'", parent.display()));
+    }
+    let valid_name = validate_file_or_folder_name(folder_name)?;
+    let new_folder = parent.join(&valid_name);
+    if new_folder.exists() {
+        return Err(format!("Folder '{valid_name}' already exists"));
+    }
+    fs::create_dir_all(&new_folder).map_err(|e| format!("Failed to create folder: {e}"))?;
+    Ok(new_folder)
+}
+
+pub fn move_fs_entry(source: &Path, target_dir: &Path) -> Result<PathBuf, String> {
+    if !source.exists() {
+        return Err(format!("Source item not found: '{}'", source.display()));
+    }
+    if !target_dir.exists() || !target_dir.is_dir() {
+        return Err(format!("Destination folder does not exist: '{}'", target_dir.display()));
+    }
+
+    if let (Ok(src_canon), Ok(target_canon)) = (source.canonicalize(), target_dir.canonicalize()) {
+        if target_canon.starts_with(&src_canon) {
+            return Err("Cannot move a folder into itself or its own subfolder".to_string());
+        }
+    }
+
+    let file_name = source.file_name().ok_or_else(|| "Invalid source file name".to_string())?;
+    let dest_path = target_dir.join(file_name);
+
+    if dest_path == source {
+        return Ok(dest_path);
+    }
+    if dest_path.exists() {
+        return Err(format!(
+            "An item named '{}' already exists in the destination folder",
+            file_name.to_string_lossy()
+        ));
+    }
+
+    if fs::rename(source, &dest_path).is_ok() {
+        return Ok(dest_path);
+    }
+
+    if source.is_dir() {
+        copy_dir_recursive(source, &dest_path)
+            .map_err(|e| format!("Failed to move directory: {e}"))?;
+        fs::remove_dir_all(source)
+            .map_err(|e| format!("Failed to clean up source directory: {e}"))?;
+    } else {
+        fs::copy(source, &dest_path)
+            .map_err(|e| format!("Failed to move file: {e}"))?;
+        fs::remove_file(source)
+            .map_err(|e| format!("Failed to clean up source file: {e}"))?;
+    }
+
+    Ok(dest_path)
+}
+
+pub fn copy_fs_entry(source: &Path, target_dir: &Path) -> Result<PathBuf, String> {
+    if !source.exists() {
+        return Err(format!("Source item not found: '{}'", source.display()));
+    }
+    if !target_dir.exists() || !target_dir.is_dir() {
+        return Err(format!("Destination folder does not exist: '{}'", target_dir.display()));
+    }
+
+    if let (Ok(src_canon), Ok(target_canon)) = (source.canonicalize(), target_dir.canonicalize()) {
+        if target_canon.starts_with(&src_canon) {
+            return Err("Cannot copy a folder into itself or its own subfolder".to_string());
+        }
+    }
+
+    let file_stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("item");
+    let ext_opt = source.extension().and_then(|s| s.to_str());
+
+    let mut dest_path = target_dir.join(source.file_name().unwrap());
+    if dest_path.exists() {
+        let mut counter = 1;
+        loop {
+            let candidate_name = if source.is_dir() || ext_opt.is_none() {
+                if counter == 1 {
+                    format!("{file_stem} - Copy")
+                } else {
+                    format!("{file_stem} - Copy ({counter})")
+                }
+            } else {
+                let ext = ext_opt.unwrap();
+                if counter == 1 {
+                    format!("{file_stem} - Copy.{ext}")
+                } else {
+                    format!("{file_stem} - Copy ({counter}).{ext}")
+                }
+            };
+            let candidate_path = target_dir.join(candidate_name);
+            if !candidate_path.exists() {
+                dest_path = candidate_path;
+                break;
+            }
+            counter += 1;
+        }
+    }
+
+    if source.is_dir() {
+        copy_dir_recursive(source, &dest_path)
+            .map_err(|e| format!("Failed to copy directory: {e}"))?;
+    } else {
+        fs::copy(source, &dest_path)
+            .map_err(|e| format!("Failed to copy file: {e}"))?;
+    }
+
+    Ok(dest_path)
+}
+
+pub fn delete_fs_entry(target: &Path) -> Result<(), String> {
+    if !target.exists() {
+        return Err(format!("Item not found: '{}'", target.display()));
+    }
+    if target.is_dir() {
+        fs::remove_dir_all(target)
+            .map_err(|e| format!("Failed to delete directory '{}': {e}", target.display()))?;
+    } else {
+        fs::remove_file(target)
+            .map_err(|e| format!("Failed to delete file '{}': {e}", target.display()))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,6 +843,33 @@ mod tests {
     }
 
     #[test]
+    fn scans_all_unused_assets_in_root() {
+        let temp_dir = std::env::temp_dir().join("aiomm_test_clean_all");
+        if temp_dir.exists() {
+            let _ = fs::remove_dir_all(&temp_dir);
+        }
+        let mod_a = temp_dir.join("ModA");
+        let mod_b = temp_dir.join("ModB");
+        fs::create_dir_all(&mod_a).unwrap();
+        fs::create_dir_all(&mod_b).unwrap();
+
+        fs::write(mod_a.join("mod.ini"), "[Resource]\nfilename = used.dds\n").unwrap();
+        fs::write(mod_a.join("used.dds"), "data").unwrap();
+        fs::write(mod_a.join("unused_a.dds"), "orphan a").unwrap();
+
+        fs::write(mod_b.join("mod.ini"), "[Resource]\nfilename = used_b.dds\n").unwrap();
+        fs::write(mod_b.join("used_b.dds"), "data").unwrap();
+
+        let scan = scan_all_unused_assets_in_root(&temp_dir).unwrap();
+        assert_eq!(scan.total_mods_scanned, 2);
+        assert_eq!(scan.mods_with_unused.len(), 1);
+        assert_eq!(scan.mods_with_unused[0].mod_name, "ModA");
+        assert_eq!(scan.total_unused_files, 1);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn packages_mod_into_zip() {
         let temp_dir = std::env::temp_dir().join("aiomm_test_packager");
         if temp_dir.exists() {
@@ -462,6 +890,53 @@ mod tests {
         let installed_dir = install_mod_from_zip(Path::new(&zip_path), &install_root).unwrap();
         assert!(Path::new(&installed_dir).exists());
         assert!(Path::new(&installed_dir).join("mod.ini").exists());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn file_manager_crud_workflow() {
+        let temp_dir = std::env::temp_dir().join(format!("aiomm_fm_test_{}", std::process::id()));
+        if temp_dir.exists() {
+            let _ = fs::remove_dir_all(&temp_dir);
+        }
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // 1. Validation
+        assert!(validate_file_or_folder_name("").is_err());
+        assert!(validate_file_or_folder_name("con").is_err());
+        assert!(validate_file_or_folder_name("bad/name").is_err());
+        assert_eq!(validate_file_or_folder_name("Good Name").unwrap(), "Good Name");
+
+        // 2. Create subfolder
+        let created = create_subfolder(&temp_dir, "Characters").unwrap();
+        assert!(created.is_dir());
+
+        // 3. Rename
+        let renamed = rename_fs_entry(&created, "Enemies").unwrap();
+        assert!(renamed.is_dir());
+        assert!(!created.exists());
+        assert!(renamed.exists());
+
+        // 4. Create child item to test move
+        let child_folder = create_subfolder(&renamed, "BossMod").unwrap();
+        fs::write(child_folder.join("mod.ini"), "test").unwrap();
+
+        let target_dest = create_subfolder(&temp_dir, "Archive").unwrap();
+        let moved = move_fs_entry(&child_folder, &target_dest).unwrap();
+        assert!(moved.exists());
+        assert!(moved.join("mod.ini").exists());
+        assert!(!child_folder.exists());
+
+        // 5. Copy
+        let copied = copy_fs_entry(&moved, &renamed).unwrap();
+        assert!(copied.exists());
+        assert!(copied.join("mod.ini").exists());
+        assert!(moved.exists()); // source still intact
+
+        // 6. Delete
+        delete_fs_entry(&copied).unwrap();
+        assert!(!copied.exists());
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

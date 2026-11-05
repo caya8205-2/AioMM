@@ -20,6 +20,16 @@ export interface ModInspectorProps {
   onToggleMod: (mod: ModEntry) => Promise<void>;
   onRefresh: () => Promise<void>;
   onNotify: (msg: string) => void;
+  onFileAction?: (action: {
+    type: 'rename' | 'move' | 'delete';
+    targetPath?: string;
+    sourcePath?: string;
+    currentName?: string;
+    sourceName?: string;
+    targetName?: string;
+    isDir: boolean;
+  }) => void;
+  onDuplicateMod?: (path: string, name: string) => Promise<void>;
 }
 
 interface PresetGroup {
@@ -36,7 +46,11 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
     onToggleMod,
     onRefresh,
     onNotify,
+    onFileAction,
+    onDuplicateMod,
   } = props;
+
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const activeInis = useMemo(
     () => mod.iniFiles.filter((f) => !f.isDisabled),
@@ -454,6 +468,93 @@ export function ModInspector(props: ModInspectorProps): JSX.Element {
             <Icon icon={Icons.external} size={14} className="text-ink-mute" />
             <span>Open Folder</span>
           </button>
+
+          {onFileAction && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md border border-hairline bg-surface-elevated text-ink-body transition-colors hover:border-hairline-strong hover:text-ink-bright sm:min-h-[36px] sm:min-w-[36px]"
+                title="Mod Actions"
+              >
+                <Icon icon={Icons.moreVertical} size={16} />
+              </button>
+
+              {menuOpen && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute right-0 top-10 z-50 w-44 rounded-lg border border-hairline bg-surface-card p-1 shadow-2xl text-xs space-y-0.5"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onFileAction({
+                        type: 'rename',
+                        targetPath: mod.path,
+                        currentName: mod.displayName,
+                        isDir: true,
+                      });
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-ink-body hover:bg-surface-elevated hover:text-ink-bright transition-colors"
+                  >
+                    <Icon icon={Icons.edit} size={13} className="text-ink-mute" />
+                    <span>Rename</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onFileAction({
+                        type: 'move',
+                        sourcePath: mod.path,
+                        sourceName: mod.displayName,
+                        isDir: true,
+                      });
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-ink-body hover:bg-surface-elevated hover:text-ink-bright transition-colors"
+                  >
+                    <Icon icon={Icons.folderMove} size={13} className="text-ink-mute" />
+                    <span>Move to...</span>
+                  </button>
+
+                  {onDuplicateMod && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        void onDuplicateMod(mod.path, mod.displayName);
+                      }}
+                      className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-ink-body hover:bg-surface-elevated hover:text-ink-bright transition-colors"
+                    >
+                      <Icon icon={Icons.copy} size={13} className="text-ink-mute" />
+                      <span>Duplicate</span>
+                    </button>
+                  )}
+
+                  <div className="my-1 border-t border-hairline" />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onFileAction({
+                        type: 'delete',
+                        targetPath: mod.path,
+                        targetName: mod.displayName,
+                        isDir: true,
+                      });
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-status-red hover:bg-status-red-soft transition-colors"
+                  >
+                    <Icon icon={Icons.trash} size={13} />
+                    <span>Delete Mod</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             type="button"

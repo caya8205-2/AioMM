@@ -1,16 +1,29 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import type {
+  AllModsCleanScanDto,
   DetectedFolder,
   DryRunDto,
   KeyConflict,
   ModCleanScanDto,
   ModEntry,
+  OrganizeMoveRequest,
+  OrganizeResultDto,
+  OrganizeScanDto,
   Preset,
   RabbitFxAnalysisDto,
   RabbitFxApplyRequest,
+  UnusedAssetInfo,
   WorkspaceSnapshot,
 } from '../types';
 import { normalizeKeyComboClient } from './keymap';
+
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
 
 export const IS_TAURI =
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -631,11 +644,80 @@ export const api = {
     return invoke<ModCleanScanDto>('scan_unused_assets', { modPath });
   },
 
+  async scanAllUnusedAssets(rootPath: string): Promise<AllModsCleanScanDto> {
+    if (!IS_TAURI) {
+      return {
+        rootPath,
+        totalModsScanned: 3,
+        modsWithUnused: [
+          {
+            modName: 'Miyabi Coat',
+            modPath: `${rootPath}/Miyabi_Coat`,
+            totalScannedFiles: 14,
+            reclaimableBytes: 29360128,
+            unusedAssets: [
+              {
+                relPath: 'Textures/old_texture.dds',
+                absPath: `${rootPath}/Miyabi_Coat/Textures/old_texture.dds`,
+                fileSizeBytes: 4194304,
+                extension: 'dds',
+              },
+              {
+                relPath: 'source/model_backup.psd',
+                absPath: `${rootPath}/Miyabi_Coat/source/model_backup.psd`,
+                fileSizeBytes: 25165824,
+                extension: 'psd',
+              },
+            ],
+          },
+        ],
+        totalUnusedFiles: 2,
+        totalReclaimableBytes: 29360128,
+      };
+    }
+    return invoke<AllModsCleanScanDto>('scan_all_unused_assets', { rootPath });
+  },
+
   async deleteUnusedAssets(filePaths: string[]): Promise<number> {
     if (!IS_TAURI) {
       return 29360128;
     }
     return invoke<number>('delete_unused_assets', { filePaths });
+  },
+
+  async quarantineUnusedAssets(filePaths: string[]): Promise<number> {
+    if (!IS_TAURI) {
+      return filePaths.length;
+    }
+    return invoke<number>('quarantine_unused_assets', { filePaths });
+  },
+
+  async restoreQuarantinedAssets(rootPath: string): Promise<number> {
+    if (!IS_TAURI) {
+      return 1;
+    }
+    return invoke<number>('restore_quarantined_assets', { rootPath });
+  },
+
+  async restoreQuarantinedAssetsBatch(filePaths: string[]): Promise<number> {
+    if (!IS_TAURI) {
+      return filePaths.length;
+    }
+    return invoke<number>('restore_quarantined_assets_batch', { filePaths });
+  },
+
+  async purgeQuarantinedAssets(rootPath: string): Promise<number> {
+    if (!IS_TAURI) {
+      return 29360128;
+    }
+    return invoke<number>('purge_quarantined_assets', { rootPath });
+  },
+
+  async scanQuarantinedAssets(rootPath: string): Promise<UnusedAssetInfo[]> {
+    if (!IS_TAURI) {
+      return [];
+    }
+    return invoke<UnusedAssetInfo[]>('scan_quarantined_assets', { rootPath });
   },
 
   async packageMod(
@@ -668,6 +750,61 @@ export const api = {
       return Object.keys(previewModEnabled).length;
     }
     return invoke<number>('batch_toggle_mods', { modsRoot, enableAll });
+  },
+
+  async renameEntry(path: string, newName: string): Promise<string> {
+    if (!IS_TAURI) {
+      return path;
+    }
+    return invoke<string>('rename_fs_entry', { path, newName });
+  },
+
+  async createFolder(parentPath: string, folderName: string): Promise<string> {
+    if (!IS_TAURI) {
+      return `${parentPath}\\${folderName}`;
+    }
+    return invoke<string>('create_subfolder', { parentPath, folderName });
+  },
+
+  async moveEntry(sourcePath: string, targetDir: string): Promise<string> {
+    if (!IS_TAURI) {
+      return `${targetDir}\\moved`;
+    }
+    return invoke<string>('move_fs_entry', { sourcePath, targetDir });
+  },
+
+  async copyEntry(sourcePath: string, targetDir: string): Promise<string> {
+    if (!IS_TAURI) {
+      return `${targetDir}\\copied`;
+    }
+    return invoke<string>('copy_fs_entry', { sourcePath, targetDir });
+  },
+
+  async deleteEntry(targetPath: string): Promise<void> {
+    if (!IS_TAURI) {
+      return;
+    }
+    return invoke<void>('delete_fs_entry', { targetPath });
+  },
+
+  async scanOrganizeMods(modsRoot: string): Promise<OrganizeScanDto> {
+    if (!IS_TAURI) {
+      return {
+        rootPath: modsRoot,
+        totalMods: 0,
+        unorganizedCount: 0,
+        alreadyOrganizedCount: 0,
+        proposals: [],
+      };
+    }
+    return invoke<OrganizeScanDto>('scan_organize_mods', { modsRoot });
+  },
+
+  async applyOrganizeMods(moves: OrganizeMoveRequest[]): Promise<OrganizeResultDto> {
+    if (!IS_TAURI) {
+      return { movedCount: moves.length, failedCount: 0, errors: [] };
+    }
+    return invoke<OrganizeResultDto>('apply_organize_mods', { moves });
   },
 
   pickModZipFile,

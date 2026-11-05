@@ -1,4 +1,5 @@
 pub mod ini;
+pub mod organizer;
 pub mod preset;
 pub mod scanner;
 pub mod tools;
@@ -113,8 +114,38 @@ fn scan_unused_assets(mod_path: String) -> Result<tools::ModCleanScanDto, String
 }
 
 #[tauri::command]
+fn scan_all_unused_assets(root_path: String) -> Result<tools::AllModsCleanScanDto, String> {
+    tools::scan_all_unused_assets_in_root(Path::new(&root_path))
+}
+
+#[tauri::command]
 fn delete_unused_assets(file_paths: Vec<String>) -> Result<u64, String> {
     tools::delete_files_batch(&file_paths)
+}
+
+#[tauri::command]
+fn quarantine_unused_assets(file_paths: Vec<String>) -> Result<usize, String> {
+    tools::quarantine_files_batch(&file_paths)
+}
+
+#[tauri::command]
+fn restore_quarantined_assets(root_path: String) -> Result<usize, String> {
+    tools::restore_quarantined_files(Path::new(&root_path))
+}
+
+#[tauri::command]
+fn restore_quarantined_assets_batch(file_paths: Vec<String>) -> Result<usize, String> {
+    tools::restore_quarantined_files_batch(&file_paths)
+}
+
+#[tauri::command]
+fn purge_quarantined_assets(root_path: String) -> Result<u64, String> {
+    tools::purge_quarantined_files(Path::new(&root_path))
+}
+
+#[tauri::command]
+fn scan_quarantined_assets(root_path: String) -> Result<Vec<tools::UnusedAssetInfo>, String> {
+    tools::scan_quarantined_files(Path::new(&root_path))
 }
 
 #[tauri::command]
@@ -140,10 +171,77 @@ fn batch_toggle_mods(mods_root: String, enable_all: bool) -> Result<usize, Strin
     scanner::batch_toggle_all(Path::new(&mods_root), enable_all)
 }
 
+#[tauri::command]
+fn rename_fs_entry(path: String, new_name: String) -> Result<String, String> {
+    tools::rename_fs_entry(Path::new(&path), &new_name)
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn create_subfolder(parent_path: String, folder_name: String) -> Result<String, String> {
+    tools::create_subfolder(Path::new(&parent_path), &folder_name)
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn move_fs_entry(source_path: String, target_dir: String) -> Result<String, String> {
+    tools::move_fs_entry(Path::new(&source_path), Path::new(&target_dir))
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn copy_fs_entry(source_path: String, target_dir: String) -> Result<String, String> {
+    tools::copy_fs_entry(Path::new(&source_path), Path::new(&target_dir))
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn delete_fs_entry(target_path: String) -> Result<(), String> {
+    tools::delete_fs_entry(Path::new(&target_path))
+}
+
+#[tauri::command]
+fn scan_organize_mods(mods_root: String) -> Result<organizer::OrganizeScanDto, String> {
+    organizer::scan_and_preview_organization(Path::new(&mods_root))
+}
+
+#[tauri::command]
+fn apply_organize_mods(moves: Vec<organizer::OrganizeMoveRequest>) -> Result<organizer::OrganizeResultDto, String> {
+    organizer::apply_organization_batch(moves)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            #[cfg(windows)]
+            {
+                use std::ffi::OsStr;
+                use std::os::windows::ffi::OsStrExt;
+                let app_id: Vec<u16> = OsStr::new("dev.caya.aiomm")
+                    .encode_wide()
+                    .chain(Some(0))
+                    .collect();
+                #[link(name = "shell32")]
+                extern "system" {
+                    fn SetCurrentProcessExplicitAppUserModelID(AppID: *const u16) -> i32;
+                }
+                unsafe {
+                    let _ = SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr());
+                }
+            }
+            #[cfg(desktop)]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Some(icon) = app.default_window_icon() {
+                        let _ = window.set_icon(icon.clone());
+                    }
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             detect_known_mod_folders,
             scan_mods_folder,
@@ -159,10 +257,23 @@ pub fn run() {
             reveal_in_explorer,
             open_external_url,
             scan_unused_assets,
+            scan_all_unused_assets,
             delete_unused_assets,
+            quarantine_unused_assets,
+            restore_quarantined_assets,
+            restore_quarantined_assets_batch,
+            purge_quarantined_assets,
+            scan_quarantined_assets,
             package_mod,
             install_mod_zip,
             batch_toggle_mods,
+            rename_fs_entry,
+            create_subfolder,
+            move_fs_entry,
+            copy_fs_entry,
+            delete_fs_entry,
+            scan_organize_mods,
+            apply_organize_mods,
         ])
         .run(tauri::generate_context!())
         .expect("error while running AIOMM tauri application");

@@ -130,3 +130,54 @@ export interface ModCleanScanDto {
   unusedAssets: UnusedAssetInfo[];
   reclaimableBytes: number;
 }
+
+export interface ModUnusedGroupDto {
+  modName: string;
+  modPath: string;
+  totalScannedFiles: number;
+  reclaimableBytes: number;
+  unusedAssets: UnusedAssetInfo[];
+}
+
+export interface AllModsCleanScanDto {
+  rootPath: string;
+  totalModsScanned: number;
+  modsWithUnused: ModUnusedGroupDto[];
+  totalUnusedFiles: number;
+  totalReclaimableBytes: number;
+}
+
+export interface OrganizeProposal {
+  modId: string;
+  modName: string;
+  currentPath: string;
+  currentRelPath: string;
+  targetFolderRel: string;
+  targetDirAbs: string;
+  suggestedFullRel: string;
+  category: string;
+  characterName: string | null;
+  confidence: number;
+  matchReason: string;
+  isAlreadyOrganized: boolean;
+  selected: boolean;
+}
+
+export interface OrganizeScanDto {
+  rootPath: string;
+  totalMods: number;
+  unorganizedCount: number;
+  alreadyOrganizedCount: number;
+  proposals: OrganizeProposal[];
+}
+
+export interface OrganizeMoveRequest {
+  sourcePath: string;
+  targetDir: string;
+}
+
+export interface OrganizeResultDto {
+  movedCount: number;
+  failedCount: number;
+  errors: string[];
+}
